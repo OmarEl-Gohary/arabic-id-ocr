@@ -15,7 +15,7 @@ training:
   warmup_epochs: 3
   patience: 50
   save_period: 5
-  workers: 8           # Standard_DS4_v2 has 8 vCPUs
+  workers: 4           # Standard_DS3_v2 has 4 vCPUs
   device: "cpu"        # CPU (upgrade to "0" once GPU quota approved)
 
 augmentation:

@@ -10,7 +10,7 @@ RESOURCE_GROUP="arabic-ocr-rg"
 LOCATION="eastus"
 WORKSPACE="arabic-ocr-ws"
 COMPUTE_NAME="cpu-cluster"
-COMPUTE_SIZE="Standard_DS4_v2"   # 8 vCPUs, 28 GB RAM — CPU training (~$0.46/hr)
+COMPUTE_SIZE="Standard_DS3_v2"   # 4 vCPUs, 14 GB RAM — fits within 6 vCPU quota (~$0.25/hr)
 MIN_NODES=0                       # scales to 0 when idle → no cost at rest
 MAX_NODES=1
 
