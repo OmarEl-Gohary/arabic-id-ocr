@@ -15,7 +15,7 @@ command: >-
   python src/training/train.py
   --config configs/training-azure.yaml
 
-environment: azureml:arabic-ocr-env:1
+environment: azureml:arabic-ocr-env:2
 
 compute: azureml:cpu-cluster
 

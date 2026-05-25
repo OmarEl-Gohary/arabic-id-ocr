@@ -1,7 +1,7 @@
 $schema: https://azuremlschemas.azureedge.net/latest/environment.schema.json
 
 name: arabic-ocr-env
-version: 1
+version: 2
 description: YOLOv11 + MLflow training environment with CUDA support
 
 # Azure ML curated image: PyTorch 2.2 + CUDA 12.1 (no need to install torch manually)
@@ -17,6 +17,7 @@ conda_file:
     - pip:
       - ultralytics>=8.3.0
       - mlflow>=2.13.0
+      - azureml-mlflow>=1.56.0          # registers azureml:// URI scheme in mlflow
       - opencv-python-headless>=4.8.0   # headless: no display needed on server
       - Pillow>=10.0.0
       - numpy>=1.24.0
