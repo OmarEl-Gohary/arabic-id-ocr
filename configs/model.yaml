@@ -1,0 +1,55 @@
+detection:
+  model_name: yolo11n  # nano for fast iteration; swap to yolo11s/m for production
+  img_size: 640
+  conf_threshold: 0.25
+  iou_threshold: 0.45
+  classes:
+    - Add1
+    - Add2
+    - Back
+    - ExpDate
+    - First_Name
+    - Front
+    - Gender
+    - HusbandName
+    - ID
+    - IssueDate
+    - Job
+    - Last_Name
+    - Religion
+    - Serial_Num
+    - Status
+  num_classes: 15
+
+ocr:
+  engine: easyocr       # options: easyocr, paddleocr, tesseract
+  languages:
+    - ar                # Arabic
+    - en                # English (for ID numbers, dates)
+  gpu: false
+  detail: 1             # 0=text only, 1=text+bounding boxes
+  paragraph: false
+  min_confidence: 0.3
+
+pipeline:
+  # Fields that are primarily Arabic text
+  arabic_fields:
+    - First_Name
+    - Last_Name
+    - Add1
+    - Add2
+    - Job
+    - Religion
+    - Gender
+    - HusbandName
+    - Status
+  # Fields that are primarily numeric/alphanumeric
+  numeric_fields:
+    - ID
+    - Serial_Num
+    - ExpDate
+    - IssueDate
+  # Fields that indicate ID side (no OCR needed)
+  structural_fields:
+    - Front
+    - Back

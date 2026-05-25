@@ -1,0 +1,29 @@
+$schema: https://azuremlschemas.azureedge.net/latest/commandJob.schema.json
+type: command
+
+experiment_name: arabic-ocr-detection
+display_name: yolo11-arabic-id-training
+
+description: >
+  Train YOLOv11n to detect 15 fields on Egyptian National ID cards.
+  Dataset: Roboflow Egyptian-Person-ID-v1 (3520 images).
+
+# Upload the entire project directory (142 MB dataset included)
+code: ..
+
+command: >-
+  python src/training/train.py
+  --config configs/training-azure.yaml
+
+environment: azureml:arabic-ocr-env:1
+
+compute: azureml:gpu-cluster
+
+environment_variables:
+  PYTHONPATH: "."
+
+resources:
+  instance_count: 1
+
+limits:
+  timeout: 7200    # 2-hour hard cap; training should finish in ~30-45 min on T4

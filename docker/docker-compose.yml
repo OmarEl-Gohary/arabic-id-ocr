@@ -1,0 +1,79 @@
+version: "3.9"
+
+services:
+  ocr-api:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    ports:
+      - "8000:8000"
+    volumes:
+      - ../runs:/app/runs:ro          # mount trained model weights read-only
+      - ../data/prediction_logs:/app/data/prediction_logs
+    environment:
+      - PYTHONUNBUFFERED=1
+    depends_on:
+      - mlflow
+    restart: unless-stopped
+    networks:
+      - ocr-net
+
+  mlflow:
+    image: ghcr.io/mlflow/mlflow:v2.13.0
+    ports:
+      - "5000:5000"
+    volumes:
+      - ../mlruns:/mlflow/mlruns
+      - ../mlartifacts:/mlflow/mlartifacts
+    command: >
+      mlflow server
+      --host 0.0.0.0
+      --port 5000
+      --backend-store-uri /mlflow/mlruns
+      --default-artifact-root /mlflow/mlartifacts
+    networks:
+      - ocr-net
+
+  prometheus:
+    image: prom/prometheus:v2.51.0
+    ports:
+      - "9090:9090"
+    volumes:
+      - ../monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --web.console.libraries=/usr/share/prometheus/console_libraries
+      - --web.console.templates=/usr/share/prometheus/consoles
+    networks:
+      - ocr-net
+
+  grafana:
+    image: grafana/grafana:10.4.0
+    ports:
+      - "3000:3000"
+    volumes:
+      - ../monitoring/grafana/dashboards:/var/lib/grafana/dashboards
+      - grafana-storage:/var/lib/grafana
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+    depends_on:
+      - prometheus
+    networks:
+      - ocr-net
+
+  prefect:
+    image: prefecthq/prefect:2-python3.11
+    ports:
+      - "4200:4200"
+    command: prefect server start --host 0.0.0.0
+    networks:
+      - ocr-net
+
+volumes:
+  grafana-storage:
+
+networks:
+  ocr-net:
+    driver: bridge

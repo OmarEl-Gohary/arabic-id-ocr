@@ -1,0 +1,50 @@
+stages:
+  validate_data:
+    cmd: python -c "
+      from src.data.validate import DatasetValidator;
+      v = DatasetValidator('Egyptain-Person-ID-1');
+      v.run();
+      import json; print(json.dumps(v.report(), indent=2))
+      "
+    deps:
+      - Egyptain-Person-ID-1/train/images
+      - Egyptain-Person-ID-1/train/labels
+      - Egyptain-Person-ID-1/valid/images
+      - Egyptain-Person-ID-1/valid/labels
+      - Egyptain-Person-ID-1/test/images
+      - Egyptain-Person-ID-1/test/labels
+      - Egyptain-Person-ID-1/data.yaml
+    outs:
+      - data/processed/validation_report.json:
+          cache: false
+
+  train:
+    cmd: python src/training/train.py --config configs/training.yaml
+    deps:
+      - src/training/train.py
+      - configs/training.yaml
+      - Egyptain-Person-ID-1/data.yaml
+      - Egyptain-Person-ID-1/train
+      - Egyptain-Person-ID-1/valid
+    outs:
+      - runs/train/arabic_id_detector/weights/best.pt
+      - runs/train/arabic_id_detector/weights/last.pt
+    params:
+      - configs/training.yaml:
+          - training.epochs
+          - training.batch_size
+          - training.img_size
+          - training.lr0
+
+  evaluate:
+    cmd: python src/training/evaluate.py
+      --model runs/train/arabic_id_detector/weights/best.pt
+      --data Egyptain-Person-ID-1/data.yaml
+      --split test
+    deps:
+      - src/training/evaluate.py
+      - runs/train/arabic_id_detector/weights/best.pt
+      - Egyptain-Person-ID-1/test
+    metrics:
+      - data/processed/eval_metrics.json:
+          cache: false

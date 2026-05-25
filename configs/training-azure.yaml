@@ -1,0 +1,45 @@
+data:
+  dataset_path: ./Egyptain-Person-ID-1/data.yaml
+  train_split: train
+  val_split: valid
+  test_split: test
+
+training:
+  epochs: 100
+  batch_size: 16
+  img_size: 640
+  lr0: 0.01
+  lrf: 0.01
+  momentum: 0.937
+  weight_decay: 0.0005
+  warmup_epochs: 3
+  patience: 50
+  save_period: 10
+  workers: 4           # Standard_NC4as_T4_v3 has 4 vCPUs
+  device: "0"          # CUDA GPU 0
+
+augmentation:
+  hsv_h: 0.015
+  hsv_s: 0.7
+  hsv_v: 0.4
+  degrees: 6.0
+  translate: 0.1
+  scale: 0.5
+  shear: 10.0
+  flipud: 0.5
+  fliplr: 0.0
+  mosaic: 1.0
+
+mlflow:
+  tracking_uri: ./mlruns   # overridden by MLFLOW_TRACKING_URI env var in Azure ML
+  experiment_name: arabic-ocr-detection
+  run_tags:
+    project: arabic-id-ocr
+    dataset: egyptian-person-id-v1
+    framework: ultralytics-yolo11
+    compute: azure-t4-gpu
+
+output:
+  project: ./runs/train
+  name: arabic_id_detector
+  exist_ok: true

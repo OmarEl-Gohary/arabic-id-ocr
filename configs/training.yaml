@@ -1,0 +1,44 @@
+data:
+  dataset_path: ./Egyptain-Person-ID-1/data.yaml
+  train_split: train
+  val_split: valid
+  test_split: test
+
+training:
+  epochs: 100
+  batch_size: 16
+  img_size: 640
+  lr0: 0.01           # initial learning rate
+  lrf: 0.01           # final learning rate (lr0 * lrf)
+  momentum: 0.937
+  weight_decay: 0.0005
+  warmup_epochs: 3
+  patience: 50        # early stopping patience
+  save_period: 10     # save checkpoint every N epochs
+  workers: 8
+  device: "0"         # "0" for GPU 0, "cpu" for CPU
+
+augmentation:
+  hsv_h: 0.015
+  hsv_s: 0.7
+  hsv_v: 0.4
+  degrees: 6.0
+  translate: 0.1
+  scale: 0.5
+  shear: 10.0
+  flipud: 0.5
+  fliplr: 0.0         # ID cards are not horizontally symmetric
+  mosaic: 1.0
+
+mlflow:
+  tracking_uri: ./mlruns
+  experiment_name: arabic-ocr-detection
+  run_tags:
+    project: arabic-id-ocr
+    dataset: egyptian-person-id-v1
+    framework: ultralytics-yolo11
+
+output:
+  project: ./runs/train
+  name: arabic_id_detector
+  exist_ok: true

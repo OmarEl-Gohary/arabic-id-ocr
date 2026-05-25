@@ -1,0 +1,43 @@
+# Python
+__pycache__/
+*.py[cod]
+*.so
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Virtual environment
+venv/
+.venv/
+env/
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb~
+
+# ML artifacts
+runs/
+mlruns/
+mlartifacts/
+*.pt
+*.onnx
+*.tflite
+
+# Data (tracked by DVC, not git)
+data/processed/
+data/prediction_logs/
+Egyptain-Person-ID-1/
+
+# Testing
+.pytest_cache/
+coverage_html/
+.coverage
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Secrets
+.env
+*.key

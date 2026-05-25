@@ -1,0 +1,33 @@
+api:
+  host: 0.0.0.0
+  port: 8000
+  workers: 1
+  reload: false
+  log_level: info
+  title: Arabic ID OCR API
+  version: 1.0.0
+  description: >
+    REST API for extracting structured data from Egyptian National ID cards
+    using YOLOv11 field detection + Arabic OCR.
+
+model:
+  detector_path: ./runs/train/arabic_id_detector/weights/best.pt
+  mlflow_model_uri: null    # set to use MLflow registry, e.g. models:/arabic-id-ocr/Production
+  device: cpu
+
+inference:
+  max_image_size_mb: 10
+  supported_formats:
+    - jpg
+    - jpeg
+    - png
+    - webp
+  batch_size: 1
+  timeout_seconds: 30
+
+monitoring:
+  enable_metrics: true
+  metrics_port: 9090
+  log_predictions: true
+  prediction_log_path: ./data/prediction_logs
+  drift_check_interval: 100   # check drift every N predictions
