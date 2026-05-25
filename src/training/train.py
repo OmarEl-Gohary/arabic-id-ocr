@@ -38,8 +38,11 @@ def train(config_path: str = "configs/training.yaml"):
 
         model = YOLO("yolo11n.pt")
 
+        # Resolve to absolute path so Ultralytics doesn't prepend its global datasets_dir
+        data_path = str(Path(cfg["data"]["dataset_path"]).resolve())
+
         results = model.train(
-            data=cfg["data"]["dataset_path"],
+            data=data_path,
             epochs=train_cfg["epochs"],
             batch=train_cfg["batch_size"],
             imgsz=train_cfg["img_size"],

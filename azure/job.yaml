@@ -17,7 +17,7 @@ command: >-
 
 environment: azureml:arabic-ocr-env:1
 
-compute: azureml:gpu-cluster
+compute: azureml:cpu-cluster
 
 environment_variables:
   PYTHONPATH: "."

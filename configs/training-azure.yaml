@@ -5,7 +5,7 @@ data:
   test_split: test
 
 training:
-  epochs: 100
+  epochs: 10
   batch_size: 16
   img_size: 640
   lr0: 0.01
@@ -14,9 +14,9 @@ training:
   weight_decay: 0.0005
   warmup_epochs: 3
   patience: 50
-  save_period: 10
-  workers: 4           # Standard_NC4as_T4_v3 has 4 vCPUs
-  device: "0"          # CUDA GPU 0
+  save_period: 5
+  workers: 8           # Standard_DS4_v2 has 8 vCPUs
+  device: "cpu"        # CPU (upgrade to "0" once GPU quota approved)
 
 augmentation:
   hsv_h: 0.015
@@ -37,7 +37,7 @@ mlflow:
     project: arabic-id-ocr
     dataset: egyptian-person-id-v1
     framework: ultralytics-yolo11
-    compute: azure-t4-gpu
+    compute: azure-cpu
 
 output:
   project: ./runs/train
