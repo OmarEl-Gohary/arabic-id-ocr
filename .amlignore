@@ -1,0 +1,47 @@
+# Azure ML code upload ignore rules
+# Same as .gitignore but WITHOUT Egyptain-Person-ID-1/
+# so the dataset gets uploaded with the job code.
+
+# Python
+__pycache__/
+*.py[cod]
+*.so
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Virtual environment
+venv/
+.venv/
+env/
+
+# Jupyter checkpoints
+.ipynb_checkpoints/
+*.ipynb~
+
+# ML artifacts (not needed for training job)
+runs/
+mlruns/
+mlartifacts/
+*.pt
+*.onnx
+*.tflite
+azure-outputs/
+
+# Processed data outputs
+data/processed/
+data/prediction_logs/
+
+# Testing
+.pytest_cache/
+coverage_html/
+.coverage
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Secrets
+.env
+*.key
