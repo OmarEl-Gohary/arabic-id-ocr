@@ -8,12 +8,17 @@ description: >
   Train YOLOv11n to detect 15 fields on Egyptian National ID cards.
   Dataset: Roboflow Egyptian-Person-ID-v1 (3520 images).
 
-# Upload the entire project directory (142 MB dataset included)
 code: ..
 
 command: >-
   python src/training/train.py
   --config configs/training-azure.yaml
+  --dataset-dir ${{inputs.dataset}}
+
+inputs:
+  dataset:
+    type: uri_folder
+    path: azureml:egyptian-id-dataset:1
 
 environment: azureml:arabic-ocr-env:2
 
@@ -26,4 +31,4 @@ resources:
   instance_count: 1
 
 limits:
-  timeout: 7200    # 2-hour hard cap; training should finish in ~30-45 min on T4
+  timeout: 7200
