@@ -49,15 +49,30 @@ def crop_field(
     return image[y1:y2, x1:x2]
 
 
-def enhance_for_ocr(image: np.ndarray) -> np.ndarray:
-    """Apply contrast enhancement and denoising to improve OCR accuracy."""
-    gray = cv2.cvtColor(image, cv2.COLOR_RGB2GRAY)
+def enhance_for_ocr(image: np.ndarray, min_height: int = 64) -> np.ndarray:
+    """
+    Preprocessing pipeline for OCR crops:
+      1. Upscale if crop is too small (Arabic text needs ≥64px height)
+      2. Deskew to correct tilt
+      3. CLAHE adaptive contrast
+      4. Mild denoising
+    """
+    # 1. Upscale small crops — tiny text kills OCR accuracy
+    h, w = image.shape[:2]
+    if h < min_height:
+        scale = min_height / h
+        image = cv2.resize(image, (int(w * scale), min_height),
+                           interpolation=cv2.INTER_CUBIC)
 
-    # CLAHE for adaptive contrast
+    # 2. Deskew
+    image = deskew(image)
+
+    # 3. CLAHE contrast on grayscale
+    gray = cv2.cvtColor(image, cv2.COLOR_RGB2GRAY)
     clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
     enhanced = clahe.apply(gray)
 
-    # Mild denoising
+    # 4. Mild denoising
     denoised = cv2.fastNlMeansDenoising(enhanced, h=10)
 
     return cv2.cvtColor(denoised, cv2.COLOR_GRAY2RGB)

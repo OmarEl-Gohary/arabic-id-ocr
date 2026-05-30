@@ -15,6 +15,12 @@ model:
   mlflow_model_uri: null    # set to use MLflow registry, e.g. models:/arabic-id-ocr/Production
   device: cpu
 
+  # OCR engine: "easyocr" | "paddleocr" | "trocr"
+  # Switch here to compare engines without changing code
+  ocr_engine: trocr
+  ocr_languages: ["ar", "en"]   # used by easyocr / paddleocr only
+  ocr_gpu: false
+
 inference:
   max_image_size_mb: 10
   supported_formats:

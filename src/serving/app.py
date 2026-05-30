@@ -45,7 +45,20 @@ def load_pipeline() -> ArabicIDOCRPipeline:
         iou_threshold=0.45,
         device=model_cfg.get("device", "cpu"),
     )
-    ocr = create_ocr_engine(engine="easyocr", languages=["ar", "en"], gpu=False)
+    ocr_engine  = model_cfg.get("ocr_engine", "easyocr")
+    ocr_gpu     = model_cfg.get("ocr_gpu", False)
+    ocr_langs   = model_cfg.get("ocr_languages", ["ar", "en"])
+
+    engine_kwargs = {}
+    if ocr_engine == "easyocr":
+        engine_kwargs = {"languages": ocr_langs, "gpu": ocr_gpu}
+    elif ocr_engine == "paddleocr":
+        engine_kwargs = {"lang": "arabic", "use_gpu": ocr_gpu}
+    elif ocr_engine == "trocr":
+        engine_kwargs = {"device": "cpu"}
+
+    logger.info(f"Loading OCR engine: {ocr_engine}")
+    ocr = create_ocr_engine(engine=ocr_engine, **engine_kwargs)
     return ArabicIDOCRPipeline(detector=detector, ocr_engine=ocr)
 
 
