@@ -15,9 +15,12 @@ model:
   mlflow_model_uri: null    # set to use MLflow registry, e.g. models:/arabic-id-ocr/Production
   device: cpu
 
-  # OCR engine: "easyocr" | "paddleocr" | "trocr"
-  # Switch here to compare engines without changing code
-  ocr_engine: trocr
+  # OCR engine: "tesseract" | "easyocr" | "paddleocr" | "trocr"
+  # tesseract = lightest (on-prem, limited resources) ← recommended
+  # easyocr   = easy setup, moderate RAM
+  # paddleocr = best Arabic accuracy, needs ~1GB RAM
+  # trocr     = transformer-based, needs ~2GB RAM
+  ocr_engine: tesseract
   ocr_languages: ["ar", "en"]   # used by easyocr / paddleocr only
   ocr_gpu: false
 

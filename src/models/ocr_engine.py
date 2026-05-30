@@ -1,4 +1,4 @@
-"""Arabic OCR engine — supports EasyOCR, PaddleOCR, and TrOCR backends."""
+"""Arabic OCR engine — supports Tesseract, EasyOCR, PaddleOCR, and TrOCR backends."""
 
 import logging
 from abc import ABC, abstractmethod
@@ -17,6 +17,64 @@ class BaseOCREngine(ABC):
     @abstractmethod
     def read_text_with_confidence(self, image: np.ndarray) -> Tuple[str, float]:
         pass
+
+
+# ── Tesseract ─────────────────────────────────────────────────────────────────
+
+class TesseractOCREngine(BaseOCREngine):
+    """
+    Tesseract — lightest option, ideal for on-prem / limited resources.
+    Runs on CPU only, ~100MB RAM, handles printed Arabic well.
+
+    Install:
+        macOS:  brew install tesseract tesseract-lang
+        Ubuntu: apt install tesseract-ocr tesseract-ocr-ara
+        pip:    pip install pytesseract
+    """
+
+    def __init__(self, lang: str = "ara+eng", config: str = ""):
+        try:
+            import pytesseract
+        except ImportError:
+            raise ImportError("pip install pytesseract  (also: brew install tesseract tesseract-lang)")
+
+        import pytesseract as tess
+        self.tess = tess
+        # ara = Arabic, eng = English fallback for numbers/serial
+        self.lang   = lang
+        # PSM 6: assume uniform block of text — best for single cropped fields
+        self.config = config or "--psm 6 --oem 1"
+
+    def read_text(self, image: np.ndarray) -> str:
+        text, _ = self.read_text_with_confidence(image)
+        return text
+
+    def read_text_with_confidence(self, image: np.ndarray) -> Tuple[str, float]:
+        import cv2
+
+        # Tesseract works best on grayscale, white background, black text
+        if len(image.shape) == 3:
+            gray = cv2.cvtColor(image, cv2.COLOR_RGB2GRAY)
+        else:
+            gray = image
+
+        # Otsu binarization — clean black/white text
+        _, binary = cv2.threshold(gray, 0, 255,
+                                  cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+
+        text = self.tess.image_to_string(
+            binary, lang=self.lang, config=self.config
+        ).strip()
+
+        # Get per-word confidence and average it
+        data = self.tess.image_to_data(
+            binary, lang=self.lang, config=self.config,
+            output_type=self.tess.Output.DICT
+        )
+        confs = [c for c in data["conf"] if isinstance(c, (int, float)) and c >= 0]
+        avg_conf = float(np.mean(confs)) / 100.0 if confs else 0.0  # normalise 0-100 → 0-1
+
+        return text, round(avg_conf, 4)
 
 
 # ── EasyOCR ───────────────────────────────────────────────────────────────────
@@ -167,6 +225,7 @@ def create_ocr_engine(engine: str = "easyocr", **kwargs) -> BaseOCREngine:
         create_ocr_engine("trocr", model_name="EkberJafar/trocr-base-arabic-v1")
     """
     engines = {
+        "tesseract": TesseractOCREngine,
         "easyocr":   EasyOCREngine,
         "paddleocr": PaddleOCREngine,
         "trocr":     TrOCREngine,

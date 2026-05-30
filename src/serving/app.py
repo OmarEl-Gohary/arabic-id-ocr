@@ -50,7 +50,9 @@ def load_pipeline() -> ArabicIDOCRPipeline:
     ocr_langs   = model_cfg.get("ocr_languages", ["ar", "en"])
 
     engine_kwargs = {}
-    if ocr_engine == "easyocr":
+    if ocr_engine == "tesseract":
+        engine_kwargs = {}                                      # uses ara+eng by default
+    elif ocr_engine == "easyocr":
         engine_kwargs = {"languages": ocr_langs, "gpu": ocr_gpu}
     elif ocr_engine == "paddleocr":
         engine_kwargs = {"lang": "arabic", "use_gpu": ocr_gpu}
