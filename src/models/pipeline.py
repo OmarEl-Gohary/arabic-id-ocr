@@ -11,6 +11,7 @@ import yaml
 from src.data.preprocess import bytes_to_image, crop_field, enhance_for_ocr, load_image
 from src.models.detector import FieldDetector
 from src.models.ocr_engine import BaseOCREngine, create_ocr_engine
+from src.models.postprocess import postprocess_fields
 
 logger = logging.getLogger(__name__)
 
@@ -72,6 +73,10 @@ class ArabicIDOCRPipeline:
                 "ocr_text": text,
                 "ocr_confidence": conf,
             })
+
+        # Apply field-specific post-processing (numeral normalisation,
+        # date formatting, gender/religion vocabulary matching, etc.)
+        fields = postprocess_fields(fields)
 
         elapsed = round(time.time() - start, 3)
 
