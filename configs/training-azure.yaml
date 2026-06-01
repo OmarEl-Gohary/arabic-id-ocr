@@ -5,7 +5,7 @@ data:
   test_split: test
 
 training:
-  epochs: 10
+  epochs: 5
   batch_size: 16
   img_size: 640
   lr0: 0.01

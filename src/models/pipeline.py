@@ -10,13 +10,13 @@ import yaml
 
 from src.data.preprocess import bytes_to_image, crop_field, enhance_for_ocr, load_image
 from src.models.detector import FieldDetector
-from src.models.ocr_engine import BaseOCREngine, create_ocr_engine
+from src.models.ocr_engine import BaseOCREngine, TesseractOCREngine, create_ocr_engine
 from src.models.postprocess import postprocess_fields
 
 logger = logging.getLogger(__name__)
 
 STRUCTURAL_FIELDS = {"Front", "Back"}
-NUMERIC_FIELDS = {"ID", "Serial_Num", "ExpDate", "IssueDate"}
+NUMERIC_FIELDS    = {"ID", "Serial_Num", "ExpDate", "IssueDate"}
 
 
 class ArabicIDOCRPipeline:
@@ -60,9 +60,14 @@ class ArabicIDOCRPipeline:
                 continue
 
             if self.enhance_crops:
-                crop = enhance_for_ocr(crop)
+                field_type = "numeric" if field_name in NUMERIC_FIELDS else "text"
+                crop = enhance_for_ocr(crop, field_type=field_type)
 
-            text, conf = self.ocr.read_text_with_confidence(crop)
+            # Pass field_name to Tesseract so it can select the best PSM/binarisation
+            if isinstance(self.ocr, TesseractOCREngine):
+                text, conf = self.ocr.read_text_with_confidence(crop, field_name=field_name)
+            else:
+                text, conf = self.ocr.read_text_with_confidence(crop)
 
             if conf < self.min_ocr_confidence:
                 text = None

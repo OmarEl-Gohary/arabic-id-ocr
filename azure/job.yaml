@@ -31,4 +31,4 @@ resources:
   instance_count: 1
 
 limits:
-  timeout: 7200
+  timeout: 18000    # 5 hours — enough for 5 CPU epochs on DS3_v2

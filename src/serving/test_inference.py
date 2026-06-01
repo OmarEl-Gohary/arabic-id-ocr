@@ -15,33 +15,63 @@ import sys
 import time
 from pathlib import Path
 
+# Ensure project root is on the path so 'src' is importable
+PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
 import cv2
 import mlflow
 import numpy as np
+import yaml
 
 # ── Config ────────────────────────────────────────────────────────────────────
-MODEL_PATH     = "runs/train/arabic_id_detector/weights/best.pt"
+SERVING_CONFIG = PROJECT_ROOT / "configs" / "serving.yaml"
 MLFLOW_URI     = "./mlruns"
 EXPERIMENT     = "arabic-ocr-inference-tests"
 CONF_THRESHOLD = 0.25
 
 
+def _load_serving_cfg() -> dict:
+    with open(SERVING_CONFIG) as f:
+        return yaml.safe_load(f)
+
+
 def build_pipeline():
-    """Load detector + EasyOCR and return pipeline."""
+    """Load detector + OCR engine from serving.yaml and return pipeline."""
     from src.models.detector import FieldDetector
     from src.models.ocr_engine import create_ocr_engine
     from src.models.pipeline import ArabicIDOCRPipeline
+
+    cfg = _load_serving_cfg()
+    model_cfg = cfg["model"]
+
+    MODEL_PATH = model_cfg.get("detector_path", "runs/train/arabic_id_detector/weights/best.pt")
 
     print("Loading YOLOv11 detector...")
     detector = FieldDetector(
         model_path=MODEL_PATH,
         conf_threshold=CONF_THRESHOLD,
         iou_threshold=0.45,
-        device="cpu",
+        device=model_cfg.get("device", "cpu"),
     )
 
-    print("Loading EasyOCR (Arabic + English)...")
-    ocr = create_ocr_engine(engine="easyocr", languages=["ar", "en"], gpu=False)
+    ocr_engine = model_cfg.get("ocr_engine", "tesseract")
+    ocr_gpu    = model_cfg.get("ocr_gpu", False)
+    ocr_langs  = model_cfg.get("ocr_languages", ["ar", "en"])
+
+    engine_kwargs: dict = {}
+    if ocr_engine == "tesseract":
+        engine_kwargs = {}
+    elif ocr_engine == "easyocr":
+        engine_kwargs = {"languages": ocr_langs, "gpu": ocr_gpu}
+    elif ocr_engine == "paddleocr":
+        engine_kwargs = {"lang": "ar", "use_gpu": ocr_gpu}
+    elif ocr_engine == "trocr":
+        engine_kwargs = {"device": "cpu"}
+
+    print(f"Loading OCR engine: {ocr_engine}...")
+    ocr = create_ocr_engine(engine=ocr_engine, **engine_kwargs)
 
     return ArabicIDOCRPipeline(detector=detector, ocr_engine=ocr, min_ocr_confidence=0.3)
 
@@ -68,8 +98,10 @@ def log_to_mlflow(result: dict, image_path: str = None, run_name: str = "inferen
 
     with mlflow.start_run(run_name=run_name) as run:
         # Params
+        serving_cfg = _load_serving_cfg()
         mlflow.log_params({
-            "model_path":      MODEL_PATH,
+            "model_path":      serving_cfg["model"].get("detector_path", "best.pt"),
+            "ocr_engine":      serving_cfg["model"].get("ocr_engine", "tesseract"),
             "conf_threshold":  CONF_THRESHOLD,
             "id_side":         result["id_side"],
             "source":          image_path or "camera",

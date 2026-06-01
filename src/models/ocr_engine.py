@@ -49,32 +49,107 @@ class TesseractOCREngine(BaseOCREngine):
         text, _ = self.read_text_with_confidence(image)
         return text
 
-    def read_text_with_confidence(self, image: np.ndarray) -> Tuple[str, float]:
-        import cv2
+    # Fields where a single text line is expected → PSM 7 works best
+    _SINGLE_LINE_FIELDS = {
+        "ID", "Serial_Num", "ExpDate", "IssueDate",
+        "First_Name", "Last_Name", "HusbandName",
+        "Gender", "Religion", "Job", "Status",
+    }
+    # Multi-line fields (address blocks) → PSM 6
+    _BLOCK_FIELDS = {"Add1", "Add2"}
 
-        # Tesseract works best on grayscale, white background, black text
-        if len(image.shape) == 3:
-            gray = cv2.cvtColor(image, cv2.COLOR_RGB2GRAY)
-        else:
-            gray = image
+    # ── Field → (lang, whitelist, psm_candidates) ─────────────────────────────
+    #
+    # Numeric-only fields: use eng + digit whitelist — far more reliable than
+    # asking the Arabic model to read digits on a coloured ID card background.
+    #
+    # Arabic text fields: use 'ara' alone — adding 'eng' causes the engine to
+    # hallucinate Latin characters.
+    #
+    # PSM 7 = single text line, PSM 6 = uniform block of text.
 
-        # Otsu binarization — clean black/white text
-        _, binary = cv2.threshold(gray, 0, 255,
-                                  cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+    # Arabic-Indic digits (٠-٩) + ASCII digits (0-9) for numeric fields.
+    # Egyptian ID cards print the national ID number and dates in Arabic-Indic
+    # numerals, so we must use the 'ara' language model (which knows ٠-٩) and
+    # whitelist both digit sets so Latin-looking noise is ignored.
+    _ARABIC_INDIC_DIGITS = "٠١٢٣٤٥٦٧٨٩"
+    _DIGIT_WHITELIST      = "٠١٢٣٤٥٦٧٨٩0123456789"
+    _DATE_WHITELIST       = "٠١٢٣٤٥٦٧٨٩0123456789/-."
 
-        text = self.tess.image_to_string(
-            binary, lang=self.lang, config=self.config
-        ).strip()
+    _FIELD_CFG: dict = {
+        # (lang,  whitelist,       psm_candidates)
+        "ID":          ("ara", _DIGIT_WHITELIST, [7]),
+        "Serial_Num":  ("ara", _DIGIT_WHITELIST, [7]),
+        "ExpDate":     ("ara", _DATE_WHITELIST,  [7]),
+        "IssueDate":   ("ara", _DATE_WHITELIST,  [7]),
+        # Arabic-only text fields — no whitelist so all Arabic chars are accepted
+        "First_Name":  ("ara", "",               [7, 6]),
+        "Last_Name":   ("ara", "",               [7, 6]),
+        "HusbandName": ("ara", "",               [7, 6]),
+        "Gender":      ("ara", "",               [7]),
+        "Religion":    ("ara", "",               [7]),
+        "Job":         ("ara", "",               [7, 6]),
+        "Status":      ("ara", "",               [6, 7]),
+        "Add1":        ("ara", "",               [6]),
+        "Add2":        ("ara", "",               [6]),
+    }
+    _DEFAULT_CFG = ("ara+eng", "", [6, 7])
 
-        # Get per-word confidence and average it
+    def _run_tess(
+        self,
+        binary: np.ndarray,
+        psm: int,
+        lang: str,
+        whitelist: str,
+    ) -> Tuple[str, float]:
+        """Run Tesseract with a given PSM/lang/whitelist and return (text, conf)."""
+        wl_flag = f" -c tessedit_char_whitelist={whitelist}" if whitelist else ""
+        cfg = f"--psm {psm} --oem 1{wl_flag}"
+        text = self.tess.image_to_string(binary, lang=lang, config=cfg).strip()
         data = self.tess.image_to_data(
-            binary, lang=self.lang, config=self.config,
-            output_type=self.tess.Output.DICT
+            binary, lang=lang, config=cfg,
+            output_type=self.tess.Output.DICT,
         )
         confs = [c for c in data["conf"] if isinstance(c, (int, float)) and c >= 0]
-        avg_conf = float(np.mean(confs)) / 100.0 if confs else 0.0  # normalise 0-100 → 0-1
-
+        avg_conf = float(np.mean(confs)) / 100.0 if confs else 0.0
         return text, round(avg_conf, 4)
+
+    def read_text_with_confidence(
+        self,
+        image: np.ndarray,
+        field_name: Optional[str] = None,
+    ) -> Tuple[str, float]:
+        import cv2
+
+        # ── Convert to grayscale ──────────────────────────────────────────────
+        gray = cv2.cvtColor(image, cv2.COLOR_RGB2GRAY) if len(image.shape) == 3 else image
+
+        # ── Field-specific Tesseract config ───────────────────────────────────
+        lang, whitelist, psm_candidates = self._FIELD_CFG.get(
+            field_name, self._DEFAULT_CFG
+        )
+
+        # ── Build binarized candidates ────────────────────────────────────────
+        _, otsu = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+
+        # Adaptive threshold handles uneven lighting / tinted ID backgrounds
+        adaptive = cv2.adaptiveThreshold(
+            gray, 255,
+            cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY,
+            blockSize=15, C=8,
+        )
+
+        # ── Try (binary × psm) combos; keep highest confidence ───────────────
+        best_text, best_conf = "", 0.0
+        for binary in (otsu, adaptive):
+            for psm in psm_candidates:
+                t, c = self._run_tess(binary, psm, lang, whitelist)
+                if c > best_conf or (c == best_conf and len(t) > len(best_text)):
+                    best_text, best_conf = t, c
+                if best_conf >= 0.75:           # good enough — stop early
+                    return best_text, best_conf
+
+        return best_text, best_conf
 
 
 # ── EasyOCR ───────────────────────────────────────────────────────────────────
@@ -112,30 +187,45 @@ class EasyOCREngine(BaseOCREngine):
 # ── PaddleOCR ─────────────────────────────────────────────────────────────────
 
 class PaddleOCREngine(BaseOCREngine):
-    """PaddleOCR — stronger Arabic model, better at dense text."""
+    """
+    PaddleOCR v3 — uses TextRecognition only (no internal text detection).
 
-    def __init__(self, lang: str = "arabic", use_gpu: bool = False):
+    YOLO already localised each field crop, so we skip PaddleOCR's built-in
+    detector and run only the Arabic recognition model directly on the crop.
+    Faster and more accurate on small pre-cropped images.
+    """
+
+    def __init__(self, lang: str = "ar", use_gpu: bool = False):
         try:
-            from paddleocr import PaddleOCR
+            from paddleocr import TextRecognition
         except ImportError:
-            raise ImportError("pip install paddlepaddle paddleocr")
+            raise ImportError("pip install paddlepaddle paddleocr>=3.0")
 
-        self.ocr = PaddleOCR(lang=lang, use_gpu=use_gpu, show_log=False)
+        self.rec  = TextRecognition(model_name="arabic_PP-OCRv5_mobile_rec")
+        self.lang = lang
 
     def read_text(self, image: np.ndarray) -> str:
         text, _ = self.read_text_with_confidence(image)
         return text
 
     def read_text_with_confidence(self, image: np.ndarray) -> Tuple[str, float]:
-        result = self.ocr.ocr(image, cls=True)
-        if not result or not result[0]:
+        import cv2
+        # TextRecognition requires BGR numpy array
+        bgr = cv2.cvtColor(image, cv2.COLOR_RGB2BGR) if len(image.shape) == 3 else image
+        result = self.rec.predict(bgr)
+
+        if not result:
             return "", 0.0
+
         texts, confs = [], []
-        for line in result[0]:
-            text, conf = line[1]
-            if text.strip():
-                texts.append(text.strip())
-                confs.append(conf)
+        for item in result:
+            if hasattr(item, "get") or isinstance(item, dict):
+                t = item.get("rec_text", "") or ""
+                c = item.get("rec_score", 0.0) or 0.0
+                if t.strip():
+                    texts.append(t.strip())
+                    confs.append(float(c))
+
         combined = " ".join(texts)
         avg_conf = float(np.mean(confs)) if confs else 0.0
         return combined, round(avg_conf, 4)
@@ -153,7 +243,7 @@ class TrOCREngine(BaseOCREngine):
     Install: pip install transformers torch Pillow
     """
 
-    DEFAULT_ARABIC_MODEL = "EkberJafar/trocr-base-arabic-v1"
+    DEFAULT_ARABIC_MODEL = "microsoft/trocr-base-printed"   # fine-tuned model path goes here once trained
     FALLBACK_MODEL       = "microsoft/trocr-base-printed"
 
     def __init__(self, model_name: Optional[str] = None, device: str = "cpu"):

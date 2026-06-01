@@ -25,9 +25,10 @@ mlartifacts/
 *.tflite
 
 # Data (tracked by DVC, not git)
-data/processed/
-data/prediction_logs/
+data/
 Egyptain-Person-ID-1/
+Egyptain-Person-ID-1.zip
+*.zip
 
 # Testing
 .pytest_cache/

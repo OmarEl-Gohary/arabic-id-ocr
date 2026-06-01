@@ -20,7 +20,7 @@ model:
   # easyocr   = easy setup, moderate RAM
   # paddleocr = best Arabic accuracy, needs ~1GB RAM
   # trocr     = transformer-based, needs ~2GB RAM
-  ocr_engine: tesseract
+  ocr_engine: paddleocr
   ocr_languages: ["ar", "en"]   # used by easyocr / paddleocr only
   ocr_gpu: false
 

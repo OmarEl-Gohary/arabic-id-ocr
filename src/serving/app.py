@@ -55,7 +55,7 @@ def load_pipeline() -> ArabicIDOCRPipeline:
     elif ocr_engine == "easyocr":
         engine_kwargs = {"languages": ocr_langs, "gpu": ocr_gpu}
     elif ocr_engine == "paddleocr":
-        engine_kwargs = {"lang": "arabic", "use_gpu": ocr_gpu}
+        engine_kwargs = {"lang": "ar", "use_gpu": ocr_gpu}
     elif ocr_engine == "trocr":
         engine_kwargs = {"device": "cpu"}
 
