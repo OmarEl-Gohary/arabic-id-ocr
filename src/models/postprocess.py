@@ -78,28 +78,74 @@ def fuzzy_vocab_match(text: str, vocab: list) -> Optional[str]:
     return text_clean if text_clean else None
 
 
+def _try_ymd(y: str, m: str, d: str) -> Optional[str]:
+    """Return YYYY/MM/DD if values are in valid ranges, else None."""
+    try:
+        yi, mi, di = int(y), int(m), int(d)
+        if 1900 <= yi <= 2100 and 1 <= mi <= 12 and 1 <= di <= 31:
+            return f"{yi:04d}/{mi:02d}/{di:02d}"
+    except ValueError:
+        pass
+    return None
+
+
 def fix_date(text: str) -> Optional[str]:
     """
-    Normalise date text to DD/MM/YYYY.
-    Handles: 01/01/1990, 1-1-1990, ١٩٩٠/١/١, etc.
+    Normalise any date text to YYYY/MM/DD.
+
+    Handles:
+      - Separated:  02/03/2028  |  2028/03/02  |  2-3-2028
+      - 8-digit:    20280302 (YYYYMMDD)  |  02032028 (DDMMYYYY)
+      - 10-digit:   2028103102 → strip to leading 8 and try YYYYMMDD
+      - Arabic-Indic numerals normalised first
     """
     if not text:
         return None
-    t = normalize_numerals(strip_bidi(text))
+    t = normalize_numerals(strip_bidi(text)).strip()
+
+    # ── Case 1: separated parts (slash / dash / dot / space) ──────────────────
     parts = re.findall(r"\d+", t)
     if len(parts) == 3:
-        d, m, y = parts
-        if len(d) == 4:          # YYYY/MM/DD → swap
-            d, m, y = y, m, d
-        # Basic range validation
-        try:
-            di, mi, yi = int(d), int(m), int(y)
-            if not (1 <= di <= 31 and 1 <= mi <= 12 and 1900 <= yi <= 2100):
-                return normalize_numerals(text.strip())
-        except ValueError:
-            pass
-        return f"{d.zfill(2)}/{m.zfill(2)}/{y}"
-    return normalize_numerals(t)
+        a, b, c = parts
+        if len(a) == 4:                        # YYYY / M / D
+            result = _try_ymd(a, b, c)
+        elif len(c) == 4:                      # D / M / YYYY
+            result = _try_ymd(c, b, a)
+        else:
+            result = None
+        if result:
+            return result
+
+    # ── Case 2: continuous digit string ───────────────────────────────────────
+    digits = re.sub(r"\D", "", t)
+
+    # 10-digit pattern: OCR misreads "/" as "1"
+    # e.g. "2028/03/02" → "2028103102"  (YYYY1MM1DD)
+    # e.g. "02/03/2028" → "02103 2028" → "021032028" (DD1MM1YYYY, 9-digit edge case)
+    if len(digits) == 10:
+        # Try YYYY1MM1DD  (positions 4 and 7 are the misread slashes)
+        if digits[4] == "1" and digits[7] == "1":
+            r = _try_ymd(digits[:4], digits[5:7], digits[8:10])
+            if r:
+                return r
+        # Try DD1MM1YYYY  (positions 2 and 5 are the misread slashes)
+        if digits[2] == "1" and digits[5] == "1":
+            r = _try_ymd(digits[6:10], digits[3:5], digits[:2])
+            if r:
+                return r
+
+    if len(digits) >= 8:
+        chunk = digits[:8]                     # take the first 8 digits
+        # Try YYYYMMDD
+        r = _try_ymd(chunk[:4], chunk[4:6], chunk[6:8])
+        if r:
+            return r
+        # Try DDMMYYYY
+        r = _try_ymd(chunk[4:8], chunk[2:4], chunk[:2])
+        if r:
+            return r
+
+    return t if t else None
 
 
 # ── Per-field processors ──────────────────────────────────────────────────────

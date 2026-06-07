@@ -1,0 +1,77 @@
+{
+  "description": "TEXT_DETECTION fetched data by ElsewedyOCR",
+  "properties": [
+    {
+      "name": "ID_Front",
+      "value": "28209192100412"
+    },
+    {
+      "name": "First_Name",
+      "value": "عبداللله"
+    },
+    {
+      "name": "Middle_Name",
+      "value": "عبدالرحمن"
+    },
+    {
+      "name": "Last_Name",
+      "value": "ابوزيد على"
+    },
+    {
+      "name": "Building_Number",
+      "value": null
+    },
+    {
+      "name": "Address_1",
+      "value": "23ش أمين ابوزيد تقسيم التجارين"
+    },
+    {
+      "name": "Address_2",
+      "value": "أول السلام القاهره"
+    },
+    {
+      "name": "Birth_Date",
+      "value": "19/09/1982"
+    },
+    {
+      "name": "City",
+      "value": "أول السلام القاهره"
+    },
+    {
+      "name": "Governorate",
+      "value": "الجيزة"
+    },
+    {
+      "name": "Birth_Code",
+      "value": "2"
+    },
+    {
+      "name": "Birth_Place_Code",
+      "value": "21"
+    },
+    {
+      "name": "Gender",
+      "value": "Male"
+    },
+    {
+      "name": "ID_Back",
+      "value": "28209192100412"
+    },
+    {
+      "name": "Job_Name",
+      "value": "مركة قواع تع"
+    },
+    {
+      "name": "Company_Name",
+      "value": null
+    },
+    {
+      "name": "Expiry_Date",
+      "value": "2022/11/20"
+    },
+    {
+      "name": "Husband_Name",
+      "value": null
+    }
+  ]
+}

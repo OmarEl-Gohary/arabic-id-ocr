@@ -12,6 +12,7 @@ Usage:
 import argparse
 import json
 import sys
+import tempfile
 import time
 from pathlib import Path
 
@@ -27,13 +28,13 @@ import yaml
 
 # ── Config ────────────────────────────────────────────────────────────────────
 SERVING_CONFIG = PROJECT_ROOT / "configs" / "serving.yaml"
-MLFLOW_URI     = "./mlruns"
+MLFLOW_URI     = "sqlite:///mlruns.db"
 EXPERIMENT     = "arabic-ocr-inference-tests"
 CONF_THRESHOLD = 0.25
 
 
 def _load_serving_cfg() -> dict:
-    with open(SERVING_CONFIG) as f:
+    with open(SERVING_CONFIG, encoding="utf-8") as f:
         return yaml.safe_load(f)
 
 
@@ -126,7 +127,7 @@ def log_to_mlflow(result: dict, image_path: str = None, run_name: str = "inferen
         })
 
         # Log full JSON result as artifact
-        result_path = f"/tmp/ocr_result_{run.info.run_id[:8]}.json"
+        result_path = str(Path(tempfile.gettempdir()) / f"ocr_result_{run.info.run_id[:8]}.json")
         with open(result_path, "w", encoding="utf-8") as f:
             json.dump(result, f, ensure_ascii=False, indent=2)
         mlflow.log_artifact(result_path, artifact_path="results")
@@ -199,7 +200,7 @@ def test_camera(pipeline):
 
         if key == ord(' '):
             snap_count += 1
-            snap_path = f"/tmp/id_capture_{snap_count}.jpg"
+            snap_path = str(Path(tempfile.gettempdir()) / f"id_capture_{snap_count}.jpg")
             cv2.imwrite(snap_path, frame)
             print(f"\nCaptured frame → running OCR pipeline...")
 

@@ -1,0 +1,94 @@
+# docker-compose.yml — local development & testing stack
+#
+# Starts three services together:
+#   ocr-api    → your FastAPI app  (http://localhost:8000)
+#   prometheus → metrics collector (http://localhost:9090)
+#   grafana    → dashboards        (http://localhost:3000)
+#
+# Usage:
+#   docker compose up --build        # first time (builds the image)
+#   docker compose up                # subsequent runs (uses cached image)
+#   docker compose down              # stop everything
+#   docker compose logs -f ocr-api   # follow API logs
+
+services:
+
+  # ── MLflow tracking server ─────────────────────────────────────────────────
+  # Runs as a proper HTTP server — no file locking, accessible from browser
+  # and from other containers by name "mlflow".
+  mlflow:
+    image: ghcr.io/mlflow/mlflow:v2.22.0
+    container_name: mlflow
+    ports:
+      - "5000:5000"
+    volumes:
+      - mlflow-data:/mlflow
+    command: >
+      mlflow server
+      --backend-store-uri sqlite:////mlflow/mlruns.db
+      --default-artifact-root /mlflow/artifacts
+      --host 0.0.0.0
+      --port 5000
+    restart: unless-stopped
+
+  # ── OCR API ────────────────────────────────────────────────────────────────
+  ocr-api:
+    build: .                          # build from the Dockerfile in this folder
+    image: arabic-id-ocr:latest
+    container_name: ocr-api
+    ports:
+      - "8000:8000"                   # host:container
+    env_file:
+      - .env                          # loads OCR_API_KEY, ALLOWED_ORIGINS, etc.
+    environment:
+      # Point to the MLflow container by its service name
+      - MLFLOW_TRACKING_URI=http://mlflow:5000
+    depends_on:
+      - mlflow
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s             # give the model time to load
+    restart: unless-stopped
+
+  # ── Prometheus ─────────────────────────────────────────────────────────────
+  # Prometheus scrapes /metrics from ocr-api every 15 s and stores time-series.
+  prometheus:
+    image: prom/prometheus:v2.51.2
+    container_name: prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--storage.tsdb.retention.time=15d"
+    restart: unless-stopped
+
+  # ── Grafana ────────────────────────────────────────────────────────────────
+  # Grafana reads from Prometheus and displays dashboards.
+  # Default login: admin / admin  (change on first login)
+  grafana:
+    image: grafana/grafana:10.4.2
+    container_name: grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin   # change in production
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    depends_on:
+      - prometheus
+    restart: unless-stopped
+
+# ── Named volumes (data persists between `docker compose down/up`) ────────────
+volumes:
+  mlflow-data:      # MLflow DB + artifacts inside Docker volume (no lock issues)
+  prometheus-data:
+  grafana-data:

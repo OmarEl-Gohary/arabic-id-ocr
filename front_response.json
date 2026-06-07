@@ -1,0 +1,77 @@
+{
+  "description": "TEXT_DETECTION fetched data by ElsewedyOCR",
+  "properties": [
+    {
+      "name": "ID_Front",
+      "value": null
+    },
+    {
+      "name": "First_Name",
+      "value": null
+    },
+    {
+      "name": "Middle_Name",
+      "value": null
+    },
+    {
+      "name": "Last_Name",
+      "value": null
+    },
+    {
+      "name": "Building_Number",
+      "value": null
+    },
+    {
+      "name": "Address_1",
+      "value": null
+    },
+    {
+      "name": "Address_2",
+      "value": null
+    },
+    {
+      "name": "Birth_Date",
+      "value": null
+    },
+    {
+      "name": "City",
+      "value": null
+    },
+    {
+      "name": "Governorate",
+      "value": null
+    },
+    {
+      "name": "Birth_Code",
+      "value": null
+    },
+    {
+      "name": "Birth_Place_Code",
+      "value": null
+    },
+    {
+      "name": "Gender",
+      "value": "Male"
+    },
+    {
+      "name": "ID_Back",
+      "value": null
+    },
+    {
+      "name": "Job_Name",
+      "value": "طالب"
+    },
+    {
+      "name": "Company_Name",
+      "value": null
+    },
+    {
+      "name": "Expiry_Date",
+      "value": "2028103102"
+    },
+    {
+      "name": "Husband_Name",
+      "value": null
+    }
+  ]
+}

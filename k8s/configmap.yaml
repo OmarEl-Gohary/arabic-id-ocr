@@ -1,0 +1,17 @@
+# CONFIGMAP
+# ─────────────────────────────────────────────────────────────────────────────
+# A ConfigMap holds non-sensitive configuration as key-value pairs.
+# Use it for things you might change between environments (dev/staging/prod)
+# without changing the Docker image itself.
+#
+# Apply:  kubectl apply -f k8s/configmap.yaml
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ocr-config
+  namespace: ocr-api
+data:
+  OCR_ENGINE: "paddleocr"
+  OCR_DEVICE: "cpu"
+  LOG_LEVEL:  "info"

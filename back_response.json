@@ -1,0 +1,77 @@
+{
+  "description": "TEXT_DETECTION fetched data by ElsewedyOCR",
+  "properties": [
+    {
+      "name": "ID_Front",
+      "value": "30308261802251"
+    },
+    {
+      "name": "First_Name",
+      "value": "عمر"
+    },
+    {
+      "name": "Middle_Name",
+      "value": null
+    },
+    {
+      "name": "Last_Name",
+      "value": "محمد حمدى على الجوهرى"
+    },
+    {
+      "name": "Building_Number",
+      "value": null
+    },
+    {
+      "name": "Address_1",
+      "value": "9 ش النصر"
+    },
+    {
+      "name": "Address_2",
+      "value": "سيدى جابر الاسكندرية"
+    },
+    {
+      "name": "Birth_Date",
+      "value": "26/08/2003"
+    },
+    {
+      "name": "City",
+      "value": "سيدى جابر الاسكندرية"
+    },
+    {
+      "name": "Governorate",
+      "value": "البحيرة"
+    },
+    {
+      "name": "Birth_Code",
+      "value": "3"
+    },
+    {
+      "name": "Birth_Place_Code",
+      "value": "18"
+    },
+    {
+      "name": "Gender",
+      "value": "Male"
+    },
+    {
+      "name": "ID_Back",
+      "value": "30308261802251"
+    },
+    {
+      "name": "Job_Name",
+      "value": null
+    },
+    {
+      "name": "Company_Name",
+      "value": null
+    },
+    {
+      "name": "Expiry_Date",
+      "value": null
+    },
+    {
+      "name": "Husband_Name",
+      "value": null
+    }
+  ]
+}

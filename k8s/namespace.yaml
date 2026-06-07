@@ -1,0 +1,12 @@
+# NAMESPACE
+# ─────────────────────────────────────────────────────────────────────────────
+# A namespace is like a folder inside your K8s cluster.
+# It keeps your app's resources isolated from other apps on the same cluster.
+# All other files in k8s/ use the "ocr-api" namespace.
+#
+# Apply:  kubectl apply -f k8s/namespace.yaml
+
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ocr-api

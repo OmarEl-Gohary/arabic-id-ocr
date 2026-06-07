@@ -5,10 +5,11 @@ import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+import cv2
 import numpy as np
 import yaml
 
-from src.data.preprocess import bytes_to_image, crop_field, enhance_for_ocr, load_image
+from src.data.preprocess import bytes_to_image, crop_field, enhance_for_ocr, load_image, preprocess_full_image
 from src.models.detector import FieldDetector
 from src.models.ocr_engine import BaseOCREngine, TesseractOCREngine, create_ocr_engine
 from src.models.postprocess import postprocess_fields
@@ -79,6 +80,13 @@ class ArabicIDOCRPipeline:
                 "ocr_confidence": conf,
             })
 
+        # ── Field validation + retry ──────────────────────────────────────────
+        # For each critical field, if the first OCR pass is invalid/empty,
+        # re-crop the same bounding box and retry with different preprocessing.
+        fields = self._retry_field(image, fields, raw_detections, "ID",      self._is_valid_id,   self._normalise_id)
+        fields = self._retry_field(image, fields, raw_detections, "Job",     self._is_valid_text, self._normalise_text)
+        fields = self._retry_field(image, fields, raw_detections, "HusbandName", self._is_valid_text, self._normalise_text)
+
         # Apply field-specific post-processing (numeral normalisation,
         # date formatting, gender/religion vocabulary matching, etc.)
         fields = postprocess_fields(fields)
@@ -104,6 +112,120 @@ class ArabicIDOCRPipeline:
     def process_bytes(self, data: bytes) -> Dict[str, Any]:
         image = bytes_to_image(data)
         return self.process_image(image)
+
+    # ── Validators ────────────────────────────────────────────────────────────
+
+    @staticmethod
+    def _is_valid_id(value: Optional[str]) -> bool:
+        """Exactly 14 ASCII digits."""
+        return bool(value and len(value) == 14 and value.isdigit())
+
+    @staticmethod
+    def _is_valid_text(value: Optional[str]) -> bool:
+        """At least 2 Arabic characters (rejects null, garbage, single chars)."""
+        if not value:
+            return False
+        arabic_chars = sum(1 for c in value if "؀" <= c <= "ۿ")
+        return arabic_chars >= 2
+
+    # ── Normalisers (quick pre-postprocess clean used during retry) ───────────
+
+    @staticmethod
+    def _normalise_id(text: Optional[str]) -> Optional[str]:
+        import re
+        from src.models.postprocess import normalize_numerals, strip_bidi
+        if not text:
+            return None
+        digits = re.sub(r"\D", "", normalize_numerals(strip_bidi(text)))
+        return digits if digits else None
+
+    @staticmethod
+    def _normalise_text(text: Optional[str]) -> Optional[str]:
+        from src.models.postprocess import strip_bidi
+        return strip_bidi(text).strip() if text else None
+
+    # ── Generic field retry ───────────────────────────────────────────────────
+
+    def _retry_field(
+        self,
+        image: np.ndarray,
+        fields: Dict[str, Any],
+        raw_detections: List[Dict],
+        field_name: str,
+        validator,
+        normaliser,
+    ) -> Dict[str, Any]:
+        """
+        Generic retry for any field whose first-pass value fails validation.
+
+        Strategies tried in order:
+          1. Raw crop × 3 upscale  — removes CLAHE/sharpen artefacts
+          2. Grayscale + Otsu binary threshold — sharpens thin characters
+          3. Inverted binary — helps when background is darker than text
+        """
+        if validator(fields.get(field_name)):
+            return fields  # already good
+
+        det = next((d for d in raw_detections if d["class_name"] == field_name), None)
+        if det is None:
+            logger.debug(f"{field_name} not detected — skipping retry")
+            return fields
+
+        crop0 = crop_field(image, det["box_xyxy"])
+        if crop0.size == 0:
+            return fields
+
+        best_text = fields.get(field_name)
+        best_len  = len(best_text) if best_text else 0
+
+        for attempt, retry_crop in enumerate(self._build_retry_crops(crop0), start=1):
+            if isinstance(self.ocr, TesseractOCREngine):
+                text, conf = self.ocr.read_text_with_confidence(retry_crop, field_name=field_name)
+            else:
+                text, conf = self.ocr.read_text_with_confidence(retry_crop)
+
+            if conf < self.min_ocr_confidence:
+                text = None
+
+            text = normaliser(text)
+            logger.debug(f"{field_name} retry {attempt}: '{text}' (conf={conf:.2f})")
+
+            if validator(text):
+                logger.info(f"{field_name} corrected on retry {attempt}: {text}")
+                fields[field_name] = text
+                return fields
+
+            if text and len(text) > best_len:
+                best_text = text
+                best_len  = len(text)
+
+        if best_text and best_text != fields.get(field_name):
+            logger.info(f"{field_name} best partial after retries: {best_text}")
+            fields[field_name] = best_text
+
+        return fields
+
+    def _build_retry_crops(self, crop: np.ndarray) -> List[np.ndarray]:
+        """
+        Return progressively different preprocessed versions of a crop.
+        Used by _retry_field for any field type.
+        """
+        h, w = crop.shape[:2]
+        results = []
+
+        # Strategy 1: raw crop × 3 upscale — no CLAHE/sharpen artefacts
+        results.append(cv2.resize(crop, (w * 3, h * 3), interpolation=cv2.INTER_CUBIC))
+
+        # Strategy 2: grayscale + Otsu binary threshold
+        gray     = cv2.cvtColor(crop, cv2.COLOR_RGB2GRAY)
+        gray_big = cv2.resize(gray, (w * 3, h * 3), interpolation=cv2.INTER_CUBIC)
+        _, binary = cv2.threshold(gray_big, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+        results.append(cv2.cvtColor(binary, cv2.COLOR_GRAY2RGB))
+
+        # Strategy 3: inverted binary (helps when text is lighter than background)
+        results.append(cv2.cvtColor(cv2.bitwise_not(binary), cv2.COLOR_GRAY2RGB))
+
+        return results
 
     def _identify_side(self, detections: List[Dict]) -> str:
         class_names = {d["class_name"] for d in detections}

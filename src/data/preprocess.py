@@ -49,9 +49,45 @@ def crop_field(
     return image[y1:y2, x1:x2]
 
 
+def preprocess_full_image(image: np.ndarray) -> np.ndarray:
+    """
+    Preprocess the full ID card image before YOLO detection.
+    Targets bad camera quality: low light, blur, poor contrast.
+
+    Steps:
+      1. Auto-gamma — brightens dark/underexposed frames
+      2. Unsharp mask — counters mild camera motion blur
+      3. CLAHE on L channel (LAB) — recovers local contrast without colour shift
+    """
+    # 1. Auto-gamma based on mean brightness
+    gray = cv2.cvtColor(image, cv2.COLOR_RGB2GRAY)
+    mean_brightness = float(np.mean(gray))
+    if mean_brightness < 110:
+        gamma = np.log(128.0) / np.log(max(mean_brightness, 1.0))
+        gamma = float(np.clip(gamma, 0.5, 2.5))
+        lut = np.array(
+            [min(255, int((i / 255.0) ** (1.0 / gamma) * 255)) for i in range(256)],
+            dtype=np.uint8,
+        )
+        image = cv2.LUT(image, lut)
+
+    # 2. Unsharp mask — mild, preserves card structure for YOLO
+    blurred = cv2.GaussianBlur(image, (0, 0), sigmaX=1.5)
+    image = cv2.addWeighted(image, 1.4, blurred, -0.4, 0)
+
+    # 3. CLAHE on L channel (LAB) — boosts local contrast, keeps colours neutral
+    lab = cv2.cvtColor(image, cv2.COLOR_RGB2LAB)
+    l, a, b = cv2.split(lab)
+    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+    lab = cv2.merge([clahe.apply(l), a, b])
+    image = cv2.cvtColor(lab, cv2.COLOR_LAB2RGB)
+
+    return image
+
+
 def enhance_for_ocr(
     image: np.ndarray,
-    min_height: int = 96,
+    min_height: int = 128,
     border: int = 10,
     field_type: str = "text",
 ) -> np.ndarray:
@@ -60,45 +96,43 @@ def enhance_for_ocr(
 
     Args:
         image:      RGB crop from the ID card.
-        min_height: Upscale until height ≥ this value (Arabic needs ≥96 px).
-        border:     White pixel border added around the image (Tesseract
-                    works better when text is not flush against the edge).
-        field_type: "numeric"  → extra contrast / morphological closing to
-                                  strengthen digit strokes before binarisation.
+        min_height: Upscale until height ≥ this value.
+        border:     White pixel border added around the image.
+        field_type: "numeric"  → morphological closing to strengthen digit strokes.
                     "text"     → standard pipeline (default).
 
     Steps:
-      1. Upscale (bicubic) if crop height < min_height
+      1. Upscale (Lanczos4) to min_height; 2× again if still < 160 px
       2. Deskew
-      3. Unsharp-mask sharpening
+      3. Strong unsharp-mask sharpening
       4. CLAHE adaptive contrast
-      5. Mild denoising
-      6. [numeric only] morphological closing to join broken digit strokes
+      5. Bilateral filter (edge-preserving denoise)
+      6. [numeric only] morphological closing
       7. White border padding
     """
-    # 1. Upscale — target at least 2× the minimum so Tesseract has enough detail
     h, w = image.shape[:2]
-    target_h = max(min_height, h)          # never shrink
+
+    # 1. Upscale — Lanczos4 for sharper text reconstruction
     if h < min_height:
         scale = min_height / h
         image = cv2.resize(
             image, (max(1, int(w * scale)), min_height),
-            interpolation=cv2.INTER_CUBIC,
+            interpolation=cv2.INTER_LANCZOS4,
         )
         h, w = image.shape[:2]
 
-    # Additional 2× upscale when the crop is still very small
-    if h < 128:
-        image = cv2.resize(image, (w * 2, h * 2), interpolation=cv2.INTER_CUBIC)
+    if h < 160:
+        image = cv2.resize(image, (w * 2, h * 2), interpolation=cv2.INTER_LANCZOS4)
+        h, w = image.shape[:2]
 
     # 2. Deskew
     image = deskew(image)
 
-    # 3. Unsharp-mask sharpening (accentuates stroke edges)
+    # 3. Unsharp mask sharpening
     blurred = cv2.GaussianBlur(image, (0, 0), sigmaX=2)
     image = cv2.addWeighted(image, 1.5, blurred, -0.5, 0)
 
-    # 4. CLAHE contrast on grayscale
+    # 4. CLAHE on grayscale
     gray = cv2.cvtColor(image, cv2.COLOR_RGB2GRAY)
     clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8, 8))
     enhanced = clahe.apply(gray)
@@ -106,12 +140,12 @@ def enhance_for_ocr(
     # 5. Mild denoising
     denoised = cv2.fastNlMeansDenoising(enhanced, h=10)
 
-    # 6. Numeric-specific: morphological closing joins broken digit segments
+    # 6. Numeric: morphological closing joins broken digit segments
     if field_type == "numeric":
         kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (2, 2))
         denoised = cv2.morphologyEx(denoised, cv2.MORPH_CLOSE, kernel)
 
-    # 7. White border — Tesseract misreads characters at image edges
+    # 7. White border
     if border > 0:
         denoised = cv2.copyMakeBorder(
             denoised, border, border, border, border,

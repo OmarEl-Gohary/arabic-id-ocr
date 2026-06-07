@@ -1,0 +1,15 @@
+{
+  "id_side": "front",
+  "fields": {
+    "First_Name": "عمر",
+    "Last_Name": "محمد حمدى على الجوهرى",
+    "Add1": "9 ش النصر",
+    "Add2": "سيدى جابر الاسكندرية",
+    "ID": "30308261802251",
+    "Serial_Num": "1U4585165"
+  },
+  "metadata": {
+    "num_fields_detected": 6,
+    "processing_time_s": 28.69
+  }
+}

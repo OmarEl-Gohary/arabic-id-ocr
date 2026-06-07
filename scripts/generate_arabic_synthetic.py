@@ -118,13 +118,19 @@ def sample_text() -> str:
 def find_arabic_fonts() -> list:
     """Return a list of available Arabic TTF font paths."""
     candidates = [
+        # Windows system fonts (Arabic support)
+        r"C:\Windows\Fonts\trado.ttf",       # Traditional Arabic
+        r"C:\Windows\Fonts\arabtype.ttf",    # Arabic Typesetting
+        r"C:\Windows\Fonts\times.ttf",
+        r"C:\Windows\Fonts\arial.ttf",
+        r"C:\Windows\Fonts\segoeui.ttf",     # Segoe UI — good Arabic coverage
+        r"C:\Windows\Fonts\calibri.ttf",
         # macOS system fonts
         "/System/Library/Fonts/GeezaPro.ttc",
         "/Library/Fonts/Arial Unicode.ttf",
         "/System/Library/Fonts/Supplemental/Arial Unicode.ttf",
-        # Homebrew / user-installed
         "/opt/homebrew/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-        # Common Linux paths
+        # Linux
         "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
         "/usr/share/fonts/arabic/amiri/Amiri-Regular.ttf",
         "/usr/share/fonts/truetype/amiri/Amiri-Regular.ttf",
@@ -132,7 +138,8 @@ def find_arabic_fonts() -> list:
     found = [p for p in candidates if os.path.exists(p)]
     if not found:
         print("WARNING: No Arabic fonts found. Using PIL default (quality will be low).")
-        print("Install fonts:  brew install font-amiri   OR   apt install fonts-amiri")
+        print("Windows: ensure trado.ttf / arabtype.ttf exist in C:\\Windows\\Fonts\\")
+        print("Linux:   apt install fonts-amiri")
     return found
 
 
@@ -145,7 +152,7 @@ def get_font(font_path: str, size: int) -> ImageFont.FreeTypeFont:
     return FONTS_CACHE[key]
 
 
-def make_background(w: int, h: int) -> Image.Image:
+def make_background(w: int, h: int, with_watermark: bool = False) -> Image.Image:
     """Create a realistic ID-card-like background."""
     style = random.choice(["white", "light_color", "noisy_white"])
 
@@ -160,47 +167,91 @@ def make_background(w: int, h: int) -> Image.Image:
         arr = np.random.randint(230, 256, (h, w, 3), dtype=np.uint8)
         bg = Image.fromarray(arr)
 
+    if with_watermark:
+        # Simulate the security guilloche/watermark on Egyptian ID number fields.
+        # Faint diagonal lines + dot grid mimics the real card background pattern.
+        draw = ImageDraw.Draw(bg)
+        shade = random.randint(195, 225)
+        step  = random.randint(5, 9)
+        for i in range(-(h), w + h, step):
+            draw.line([(i, 0), (i + h, h)], fill=(shade, shade, shade + 5), width=1)
+        for i in range(-(h), w + h, step * 2):
+            draw.line([(i + h, 0), (i, h)], fill=(shade + 5, shade, shade), width=1)
+
     return bg
 
 
 def augment(img: Image.Image) -> Image.Image:
-    """Apply random degradation to simulate camera / scan quality."""
+    """Apply random degradation to simulate bad camera / scan quality."""
 
-    # Blur — the main robustness target
+    # Gaussian blur (defocus / camera shake)
     if random.random() < 0.65:
         radius = random.uniform(0.3, 3.5)
         img = img.filter(ImageFilter.GaussianBlur(radius=radius))
 
+    # Motion blur (horizontal camera movement)
+    if random.random() < 0.35:
+        kernel_size = random.choice([3, 5, 7, 9])
+        kernel = np.zeros((kernel_size, kernel_size), dtype=np.float32)
+        kernel[kernel_size // 2, :] = 1.0 / kernel_size
+        arr = np.array(img)
+        import cv2 as _cv2
+        arr = _cv2.filter2D(arr, -1, kernel)
+        img = Image.fromarray(arr)
+
+    # Salt-and-pepper noise
+    if random.random() < 0.35:
+        arr     = np.array(img)
+        density = random.uniform(0.01, 0.06)
+        n_px    = int(arr.shape[0] * arr.shape[1] * density)
+        for val in (255, 0):
+            ys = np.random.randint(0, arr.shape[0], n_px)
+            xs = np.random.randint(0, arr.shape[1], n_px)
+            arr[ys, xs] = val
+        img = Image.fromarray(arr)
+
+    # Perspective skew (camera angle / card tilt)
+    if random.random() < 0.35:
+        w, h  = img.size
+        skew  = random.uniform(-0.12, 0.12)
+        coeffs = (1, skew, -skew * h / 2,
+                  0, 1,    0,
+                  0, 0)
+        img = img.transform(
+            (w, h), Image.PERSPECTIVE, coeffs,
+            Image.BICUBIC, fillcolor=(255, 255, 255),
+        )
+
     # Brightness
     if random.random() < 0.5:
-        img = ImageEnhance.Brightness(img).enhance(random.uniform(0.55, 1.45))
+        img = ImageEnhance.Brightness(img).enhance(random.uniform(0.5, 1.5))
 
     # Contrast
     if random.random() < 0.45:
-        img = ImageEnhance.Contrast(img).enhance(random.uniform(0.6, 1.5))
+        img = ImageEnhance.Contrast(img).enhance(random.uniform(0.55, 1.55))
 
-    # Sharpness (slight blur from defocus)
+    # Sharpness (defocus)
     if random.random() < 0.3:
-        img = ImageEnhance.Sharpness(img).enhance(random.uniform(0.2, 1.0))
+        img = ImageEnhance.Sharpness(img).enhance(random.uniform(0.1, 1.0))
 
     # Gaussian noise
     if random.random() < 0.35:
         arr   = np.array(img).astype(np.float32)
-        sigma = random.uniform(5, 25)
+        sigma = random.uniform(5, 30)
         noise = np.random.normal(0, sigma, arr.shape)
         arr   = np.clip(arr + noise, 0, 255).astype(np.uint8)
         img   = Image.fromarray(arr)
 
-    # Slight rotation (camera tilt)
+    # Rotation (camera tilt)
     if random.random() < 0.4:
-        angle = random.uniform(-5, 5)
+        angle = random.uniform(-7, 7)
         img   = img.rotate(angle, fillcolor=(255, 255, 255), expand=False)
 
     # JPEG compression artefacts
-    if random.random() < 0.3:
+    if random.random() < 0.35:
         import io
         buf = io.BytesIO()
-        img.save(buf, format="JPEG", quality=random.randint(40, 75))
+        img.save(buf, format="JPEG", quality=random.randint(30, 75))
         buf.seek(0)
         img = Image.open(buf).copy()
 
@@ -224,6 +275,7 @@ def render_text_image(
     target_h: int = 64,
     min_w: int = 80,
     padding: int = 10,
+    with_watermark: bool = False,
 ) -> Image.Image:
     """Render Arabic text onto a background image."""
     display_text = reshape_arabic(text)
@@ -231,7 +283,6 @@ def render_text_image(
     font_size = int(target_h * 0.65)
     font = get_font(font_path, font_size)
 
-    # Measure text size
     dummy = Image.new("RGB", (1, 1))
     draw  = ImageDraw.Draw(dummy)
     bbox  = draw.textbbox((0, 0), display_text, font=font)
@@ -241,10 +292,9 @@ def render_text_image(
     w = max(tw + padding * 2, min_w)
     h = th + padding * 2
 
-    bg   = make_background(w, h)
+    bg   = make_background(w, h, with_watermark=with_watermark)
     draw = ImageDraw.Draw(bg)
 
-    # Draw text — dark colour on light background
     r = random.randint(0, 60)
     g = random.randint(0, 60)
     b = random.randint(0, 60)
@@ -259,13 +309,26 @@ def render_text_image(
 
 def parse_args():
     p = argparse.ArgumentParser()
-    p.add_argument("--count", type=int, default=10000,
+    p.add_argument("--count",      type=int, default=10000,
                    help="Number of synthetic images to generate")
-    p.add_argument("--out",   default="data/arabic_synthetic",
+    p.add_argument("--out",        default="data/arabic_synthetic",
                    help="Output directory")
-    p.add_argument("--height", type=int, default=64,
+    p.add_argument("--height",     type=int, default=64,
                    help="Target text height in pixels before augmentation")
+    p.add_argument("--field-type", default="all",
+                   choices=["all", "id", "address", "name", "numeric"],
+                   help="Generate only samples for a specific field type")
     return p.parse_args()
+
+
+# Field-type → sample_text category weights
+_FIELD_WEIGHTS = {
+    "id":      {"id": 1},
+    "address": {"address": 1},
+    "name":    {"name": 1, "multi_word": 1},
+    "numeric": {"id": 2, "date": 2, "serial": 1},
+    "all":     None,  # uses default weights in sample_text()
+}
 
 
 def main():
@@ -280,17 +343,36 @@ def main():
     if not fonts:
         sys.exit(1)
     print(f"Found {len(fonts)} font(s): {[Path(f).name for f in fonts]}")
-    print(f"Generating {args.count} images → {out_dir}\n")
+    print(f"Generating {args.count} images (field_type={args.field_type}) → {out_dir}\n")
+
+    field_type   = args.field_type
+    use_watermark_for_id = field_type in ("id", "numeric", "all")
 
     rows = []
     for i in range(args.count):
-        text      = sample_text()
-        font_path = random.choice(fonts)
+        # For targeted generation, force the category
+        if field_type == "id":
+            text = random_id()
+        elif field_type == "address":
+            parts = random.sample(ARABIC_ADDRESSES, random.randint(1, 2))
+            prefix = random_arabic_indic_number(random.randint(1, 2)) + " " if random.random() < 0.4 else ""
+            text = prefix + " ".join(parts)
+        elif field_type == "name":
+            text = " ".join(random.choice(ARABIC_NAMES) for _ in range(random.randint(1, 3)))
+        elif field_type == "numeric":
+            text = random.choice([random_id, random_date, random_serial])()
+        else:
+            text = sample_text()
+
+        font_path    = random.choice(fonts)
+        with_wm      = use_watermark_for_id and (field_type == "id" or
+                        (field_type == "all" and random.random() < 0.12))
 
         try:
-            img = render_text_image(text, font_path, target_h=args.height)
+            img = render_text_image(text, font_path, target_h=args.height,
+                                    with_watermark=with_wm)
             img = augment(img)
-        except Exception as e:
+        except Exception:
             continue
 
         filename = f"syn_{i:06d}.png"
