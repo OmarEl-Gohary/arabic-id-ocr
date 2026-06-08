@@ -1,9 +1,11 @@
 """Image preprocessing utilities for Arabic ID OCR pipeline."""
 
+import io
 from typing import Optional, Tuple
 
 import cv2
 import numpy as np
+from PIL import Image, ImageOps
 
 
 def load_image(path: str) -> np.ndarray:
@@ -197,8 +199,23 @@ def normalize_image(image: np.ndarray) -> np.ndarray:
 
 
 def bytes_to_image(data: bytes) -> np.ndarray:
-    arr = np.frombuffer(data, dtype=np.uint8)
-    image = cv2.imdecode(arr, cv2.IMREAD_COLOR)
-    if image is None:
-        raise ValueError("Could not decode image bytes")
-    return cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+    """
+    Decode image bytes to an RGB numpy array.
+
+    Uses Pillow so that EXIF orientation metadata is respected automatically.
+    Android and iOS camera photos are almost always stored with a 90°/270°
+    rotation flag in EXIF — cv2.imdecode() silently ignores this, which makes
+    the image arrive sideways at YOLO and produces zero detections.
+    """
+    try:
+        pil_img = Image.open(io.BytesIO(data))
+        pil_img = ImageOps.exif_transpose(pil_img)   # apply EXIF rotation
+        pil_img = pil_img.convert("RGB")
+        return np.array(pil_img)
+    except Exception:
+        # Fallback to OpenCV for non-JPEG formats or corrupted EXIF
+        arr = np.frombuffer(data, dtype=np.uint8)
+        image = cv2.imdecode(arr, cv2.IMREAD_COLOR)
+        if image is None:
+            raise ValueError("Could not decode image bytes")
+        return cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
