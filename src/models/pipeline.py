@@ -80,6 +80,17 @@ class ArabicIDOCRPipeline:
                 "ocr_confidence": conf,
             })
 
+            # ── Job crop → split top/bottom for Job_Name / Company_Name ──────
+            # Egyptian ID job section has two lines:
+            #   top half  → الوظيفة  (occupation)   → Job
+            #   bottom half → جهة العمل (employer) → Company
+            if field_name == "Job":
+                job_text, company_text = self._split_job_company(crop)
+                if job_text:
+                    fields["Job"] = job_text          # override with top-half read
+                if company_text:
+                    fields["Company"] = company_text
+
         # ── Field validation + retry ──────────────────────────────────────────
         # For each critical field, if the first OCR pass is invalid/empty,
         # re-crop the same bounding box and retry with different preprocessing.
@@ -204,6 +215,54 @@ class ArabicIDOCRPipeline:
             fields[field_name] = best_text
 
         return fields
+
+    def _split_job_company(self, crop: np.ndarray):
+        """
+        Split the Job YOLO crop vertically into two halves:
+          top    → Job_Name   (الوظيفة)
+          bottom → Company_Name (جهة العمل)
+
+        Returns (job_text, company_text) — either can be None.
+
+        Strategy:
+          1. Try newline split from the full-crop OCR result (most reliable).
+          2. Fall back to physical top/bottom half if no newline found.
+        """
+        h, w = crop.shape[:2]
+
+        # ── Attempt 1: multi-line OCR on the full crop ────────────────────────
+        if isinstance(self.ocr, TesseractOCREngine):
+            full_text, _ = self.ocr.read_text_with_confidence(crop, field_name="Job")
+        else:
+            full_text, _ = self.ocr.read_text_with_confidence(crop)
+
+        if full_text and "\n" in full_text:
+            lines = [l.strip() for l in full_text.split("\n") if l.strip()]
+            if len(lines) >= 2:
+                return lines[0], lines[1]
+            return lines[0], None
+
+        # ── Attempt 2: physical split at midpoint ─────────────────────────────
+        # Only worth trying if the crop is tall enough for two lines (>40 px)
+        if h < 40:
+            return full_text, None
+
+        mid = h // 2
+        top_crop    = crop[:mid, :]
+        bottom_crop = crop[mid:, :]
+
+        if self.enhance_crops:
+            top_crop    = enhance_for_ocr(top_crop,    field_type="text")
+            bottom_crop = enhance_for_ocr(bottom_crop, field_type="text")
+
+        if isinstance(self.ocr, TesseractOCREngine):
+            job_text,     _ = self.ocr.read_text_with_confidence(top_crop,    field_name="Job")
+            company_text, _ = self.ocr.read_text_with_confidence(bottom_crop, field_name="Job")
+        else:
+            job_text,     _ = self.ocr.read_text_with_confidence(top_crop)
+            company_text, _ = self.ocr.read_text_with_confidence(bottom_crop)
+
+        return job_text or None, company_text or None
 
     def _build_retry_crops(self, crop: np.ndarray) -> List[np.ndarray]:
         """

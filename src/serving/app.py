@@ -168,7 +168,7 @@ def _format_etisalat_response(pipeline_result: dict) -> dict:
         {"name": "Gender",           "value": gender},
         {"name": "ID_Back",          "value": id_num},        # same number on both sides
         {"name": "Job_Name",         "value": fields.get("Job")},
-        {"name": "Company_Name",     "value": None},          # not a separate YOLO class
+        {"name": "Company_Name",     "value": fields.get("Company")},
         {"name": "Expiry_Date",      "value": fields.get("ExpDate")},
         {"name": "Husband_Name",     "value": fields.get("HusbandName")},
     ]
@@ -192,8 +192,8 @@ def _merge_pipeline_fields(front_raw: dict, back_raw: dict) -> dict:
     back_fields  = back_raw.get("fields",  {})
 
     # Fields that live on the back of an Egyptian ID
-    back_preferred = {"Job", "HusbandName", "ExpDate", "IssueDate", "Serial_Num",
-                      "Add1", "Add2", "Status", "Religion"}
+    back_preferred = {"Job", "Company", "HusbandName", "ExpDate", "IssueDate",
+                      "Serial_Num", "Add1", "Add2", "Status", "Religion"}
 
     all_keys = set(front_fields) | set(back_fields)
     merged: dict = {}
