@@ -1,29 +1,36 @@
-# Core OCR pipeline dependencies
-# Install with: pip install -r requirements-server.txt
-
-# YOLO detection
+# ── YOLO field detector ───────────────────────────────────────────────────────
 ultralytics==8.4.57
 
-# PaddleOCR (Arabic OCR engine)
-paddleocr==3.6.0
-# Install PaddlePaddle separately (CPU):
-pip install paddlepaddle==3.0.0 -i https://www.paddlepaddle.org.cn/packages/stable/cpu/
+# ── PaddleOCR 3.x (TextRecognition API) ──────────────────────────────────────
+# paddlepaddle==3.0.0 is installed separately in the Dockerfile
+# (requires separate Baidu index + AVX2 CPU)
+paddleocr>=3.0.0
+python-bidi>=0.4.0
+shapely>=1.7.0
+pyclipper>=1.3.0
+scipy>=1.7.0
+scikit-learn>=1.0.0
 
-# Image processing
-opencv-python==4.13.0.92
-Pillow==12.2.0
-numpy==2.3.5
+# ── Image processing ──────────────────────────────────────────────────────────
+# numpy<2.0 required — PaddlePaddle 3.x compiled against NumPy 1.x
+numpy<2.0
+Pillow>=9.0.0
+opencv-python>=4.8.0
 
-# API serving
-fastapi==0.136.3
-uvicorn==0.48.0
-python-multipart==0.0.29
-prometheus-fastapi-instrumentator==7.1.0
+# ── API serving ───────────────────────────────────────────────────────────────
+fastapi>=0.100.0
+uvicorn>=0.20.0
+python-multipart>=0.0.6
+python-dotenv>=1.0.0
+pydantic>=2.0.0
+prometheus-fastapi-instrumentator>=6.0.0
 
-# Experiment tracking
-mlflow==3.12.0
+# ── Experiment tracking ───────────────────────────────────────────────────────
+mlflow>=2.10.0
+# polars-lts-cpu: mlflow pulls polars; standard polars requires AVX2
+polars-lts-cpu
 
-# Utilities
-PyYAML==6.0.2
-requests==2.34.0
-python-dotenv==1.1.0
+# ── Utilities ─────────────────────────────────────────────────────────────────
+PyYAML>=6.0
+requests>=2.28.0
+tqdm>=4.65.0
