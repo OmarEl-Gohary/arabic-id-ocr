@@ -41,8 +41,10 @@ services:
     env_file:
       - .env                          # loads OCR_API_KEY, ALLOWED_ORIGINS, etc.
     environment:
-      # Point to the MLflow container by its service name
       - MLFLOW_TRACKING_URI=http://mlflow:5000
+      - PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK=True
+    volumes:
+      - paddleocr-models:/root/.paddlex
     depends_on:
       - mlflow
     healthcheck:
@@ -89,6 +91,7 @@ services:
 
 # ── Named volumes (data persists between `docker compose down/up`) ────────────
 volumes:
-  mlflow-data:      # MLflow DB + artifacts inside Docker volume (no lock issues)
+  mlflow-data:
   prometheus-data:
   grafana-data:
+  paddleocr-models:   # persists downloaded PaddleOCR model weights across restarts
