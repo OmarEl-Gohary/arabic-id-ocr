@@ -41,9 +41,24 @@ def register_yolo(client: MlflowClient, tracking_uri: str) -> str:
 
         run_id = run.info.run_id
 
-    # Register the model from the logged artifact
+    # Register using low-level client API (avoids search_logged_models endpoint
+    # that was added in MLflow 3.x and is missing from server v2.22.0)
+    try:
+        client.create_registered_model(
+            name=YOLO_MODEL_NAME,
+            description="YOLOv11n field detector for Egyptian National ID cards",
+        )
+        print(f"Created registered model: {YOLO_MODEL_NAME}")
+    except Exception:
+        print(f"Model {YOLO_MODEL_NAME} already exists — adding new version")
+
     model_uri = f"runs:/{run_id}/weights"
-    mv = mlflow.register_model(model_uri=model_uri, name=YOLO_MODEL_NAME)
+    mv = client.create_model_version(
+        name=YOLO_MODEL_NAME,
+        source=model_uri,
+        run_id=run_id,
+        description="YOLOv11n — mAP50=0.937, 15 classes, 100 epochs",
+    )
     print(f"Registered {YOLO_MODEL_NAME} — version {mv.version}")
 
     # Transition to Production
