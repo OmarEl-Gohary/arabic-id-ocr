@@ -1,43 +1,207 @@
 {
-  "title": "Arabic ID OCR - Production Dashboard",
+  "title": "Arabic ID OCR — Production Dashboard",
   "uid": "arabic-ocr-prod",
   "schemaVersion": 38,
+  "refresh": "30s",
+  "time": { "from": "now-1h", "to": "now" },
   "panels": [
+
     {
+      "id": 1,
       "type": "stat",
-      "title": "Total OCR Requests",
-      "gridPos": {"h": 4, "w": 4, "x": 0, "y": 0},
-      "targets": [{"expr": "sum(ocr_requests_total)", "legendFormat": "Total Requests"}]
+      "title": "Total Requests",
+      "gridPos": { "h": 4, "w": 4, "x": 0, "y": 0 },
+      "options": { "colorMode": "background", "graphMode": "area", "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "targets": [{ "datasource": "Prometheus", "expr": "sum(ocr_requests_total)", "legendFormat": "Total" }]
     },
+
     {
+      "id": 2,
       "type": "stat",
-      "title": "Error Rate",
-      "gridPos": {"h": 4, "w": 4, "x": 4, "y": 0},
-      "targets": [{"expr": "sum(ocr_requests_total{status='error'}) / sum(ocr_requests_total)", "legendFormat": "Error Rate"}]
+      "title": "Successful Requests",
+      "gridPos": { "h": 4, "w": 4, "x": 4, "y": 0 },
+      "options": { "colorMode": "background", "graphMode": "area", "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "fieldConfig": { "defaults": { "color": { "fixedColor": "green", "mode": "fixed" } } },
+      "targets": [{ "datasource": "Prometheus", "expr": "sum(ocr_requests_total{status=\"success\"})", "legendFormat": "Success" }]
     },
+
     {
-      "type": "graph",
-      "title": "Request Latency (p50/p95/p99)",
-      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 4},
+      "id": 3,
+      "type": "stat",
+      "title": "Failed Requests",
+      "gridPos": { "h": 4, "w": 4, "x": 8, "y": 0 },
+      "options": { "colorMode": "background", "graphMode": "area", "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "fieldConfig": { "defaults": { "color": { "fixedColor": "red", "mode": "fixed" } } },
+      "targets": [{ "datasource": "Prometheus", "expr": "sum(ocr_requests_total{status=\"error\"}) or vector(0)", "legendFormat": "Errors" }]
+    },
+
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Success Rate",
+      "gridPos": { "h": 4, "w": 4, "x": 12, "y": 0 },
+      "options": { "colorMode": "background", "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "thresholds": {
+            "steps": [
+              { "color": "red", "value": 0 },
+              { "color": "yellow", "value": 80 },
+              { "color": "green", "value": 95 }
+            ]
+          }
+        }
+      },
+      "targets": [{
+        "datasource": "Prometheus",
+        "expr": "sum(ocr_requests_total{status=\"success\"}) / sum(ocr_requests_total) * 100",
+        "legendFormat": "Success %"
+      }]
+    },
+
+    {
+      "id": 5,
+      "type": "stat",
+      "title": "Avg Processing Time",
+      "gridPos": { "h": 4, "w": 4, "x": 16, "y": 0 },
+      "options": { "colorMode": "background", "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "thresholds": {
+            "steps": [
+              { "color": "green", "value": 0 },
+              { "color": "yellow", "value": 5 },
+              { "color": "red", "value": 15 }
+            ]
+          }
+        }
+      },
+      "targets": [{
+        "datasource": "Prometheus",
+        "expr": "histogram_quantile(0.5, rate(ocr_processing_seconds_bucket[5m]))",
+        "legendFormat": "p50"
+      }]
+    },
+
+    {
+      "id": 6,
+      "type": "stat",
+      "title": "Avg Fields Detected",
+      "gridPos": { "h": 4, "w": 4, "x": 20, "y": 0 },
+      "options": { "colorMode": "background", "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "targets": [{
+        "datasource": "Prometheus",
+        "expr": "histogram_quantile(0.5, rate(ocr_fields_detected_per_request_bucket[5m]))",
+        "legendFormat": "Median fields"
+      }]
+    },
+
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "Request Rate (per minute)",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 4 },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" } },
+      "fieldConfig": { "defaults": { "unit": "reqpm" } },
       "targets": [
-        {"expr": "histogram_quantile(0.50, rate(ocr_request_duration_seconds_bucket[5m]))", "legendFormat": "p50"},
-        {"expr": "histogram_quantile(0.95, rate(ocr_request_duration_seconds_bucket[5m]))", "legendFormat": "p95"},
-        {"expr": "histogram_quantile(0.99, rate(ocr_request_duration_seconds_bucket[5m]))", "legendFormat": "p99"}
+        { "datasource": "Prometheus", "expr": "rate(ocr_requests_total{endpoint=\"combined\"}[1m]) * 60", "legendFormat": "combined" },
+        { "datasource": "Prometheus", "expr": "rate(ocr_requests_total{endpoint=\"single\"}[1m]) * 60", "legendFormat": "single" },
+        { "datasource": "Prometheus", "expr": "rate(ocr_requests_total{endpoint=\"base64\"}[1m]) * 60", "legendFormat": "base64" }
       ]
     },
+
     {
-      "type": "graph",
-      "title": "Fields Detected per Request",
-      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 4},
-      "targets": [{"expr": "histogram_quantile(0.50, rate(ocr_fields_detected_per_request_bucket[5m]))", "legendFormat": "Median fields"}]
+      "id": 8,
+      "type": "timeseries",
+      "title": "Processing Time p50 / p95 / p99",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 4 },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" } },
+      "fieldConfig": { "defaults": { "unit": "s" } },
+      "targets": [
+        { "datasource": "Prometheus", "expr": "histogram_quantile(0.50, rate(ocr_processing_seconds_bucket[5m]))", "legendFormat": "p50" },
+        { "datasource": "Prometheus", "expr": "histogram_quantile(0.95, rate(ocr_processing_seconds_bucket[5m]))", "legendFormat": "p95" },
+        { "datasource": "Prometheus", "expr": "histogram_quantile(0.99, rate(ocr_processing_seconds_bucket[5m]))", "legendFormat": "p99" }
+      ]
     },
+
     {
-      "type": "graph",
-      "title": "OCR Confidence by Field",
-      "gridPos": {"h": 8, "w": 24, "x": 0, "y": 12},
-      "targets": [{"expr": "histogram_quantile(0.50, rate(ocr_field_confidence_bucket[5m])) by (field_name)", "legendFormat": "{{field_name}}"}]
+      "id": 9,
+      "type": "table",
+      "title": "Requests by Client IP (Who Made the Request)",
+      "description": "Shows each IP that called the OCR API and how many requests they made",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 12 },
+      "options": { "sortBy": [{ "displayName": "Requests", "desc": true }] },
+      "targets": [{
+        "datasource": "Prometheus",
+        "expr": "sort_desc(sum by (client_ip, endpoint, status) (ocr_requests_total))",
+        "legendFormat": "{{client_ip}} | {{endpoint}} | {{status}}",
+        "instant": true,
+        "format": "table"
+      }],
+      "transformations": [
+        { "id": "organize", "options": { "renameByName": { "client_ip": "Client IP", "endpoint": "Endpoint", "status": "Status", "Value": "Requests" } } }
+      ]
+    },
+
+    {
+      "id": 10,
+      "type": "piechart",
+      "title": "Requests by Endpoint",
+      "gridPos": { "h": 8, "w": 6, "x": 12, "y": 12 },
+      "options": { "pieType": "donut", "legend": { "displayMode": "table", "placement": "right", "values": ["value", "percent"] } },
+      "targets": [{
+        "datasource": "Prometheus",
+        "expr": "sum by (endpoint) (ocr_requests_total)",
+        "legendFormat": "{{endpoint}}"
+      }]
+    },
+
+    {
+      "id": 11,
+      "type": "piechart",
+      "title": "Success vs Error",
+      "gridPos": { "h": 8, "w": 6, "x": 18, "y": 12 },
+      "options": { "pieType": "donut", "legend": { "displayMode": "table", "placement": "right", "values": ["value", "percent"] } },
+      "fieldConfig": {
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "success" }, "properties": [{ "id": "color", "value": { "fixedColor": "green", "mode": "fixed" } }] },
+          { "matcher": { "id": "byName", "options": "error" },   "properties": [{ "id": "color", "value": { "fixedColor": "red",   "mode": "fixed" } }] }
+        ]
+      },
+      "targets": [{
+        "datasource": "Prometheus",
+        "expr": "sum by (status) (ocr_requests_total)",
+        "legendFormat": "{{status}}"
+      }]
+    },
+
+    {
+      "id": 12,
+      "type": "timeseries",
+      "title": "Fields Detected per Request (over time)",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 20 },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" } },
+      "targets": [
+        { "datasource": "Prometheus", "expr": "histogram_quantile(0.50, rate(ocr_fields_detected_per_request_bucket[5m]))", "legendFormat": "p50 fields" },
+        { "datasource": "Prometheus", "expr": "histogram_quantile(0.95, rate(ocr_fields_detected_per_request_bucket[5m]))", "legendFormat": "p95 fields" }
+      ]
+    },
+
+    {
+      "id": 13,
+      "type": "timeseries",
+      "title": "Error Rate over Time",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 20 },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" } },
+      "fieldConfig": { "defaults": { "unit": "percentunit", "color": { "fixedColor": "red", "mode": "fixed" } } },
+      "targets": [{
+        "datasource": "Prometheus",
+        "expr": "rate(ocr_requests_total{status=\"error\"}[5m]) / rate(ocr_requests_total[5m])",
+        "legendFormat": "Error Rate"
+      }]
     }
-  ],
-  "time": {"from": "now-1h", "to": "now"},
-  "refresh": "30s"
+
+  ]
 }

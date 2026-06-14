@@ -16,7 +16,8 @@ load_dotenv()
 
 import mlflow
 import yaml
-from fastapi import BackgroundTasks, Depends, FastAPI, File, HTTPException, UploadFile, status
+from fastapi import BackgroundTasks, Depends, FastAPI, File, HTTPException, Request, UploadFile, status
+from prometheus_client import Counter, Histogram
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 from prometheus_fastapi_instrumentator import Instrumentator
@@ -37,6 +38,24 @@ from src.serving.schemas import (
 logger = logging.getLogger(__name__)
 
 _pipeline: Optional[ArabicIDOCRPipeline] = None
+
+# ── Custom Prometheus metrics ─────────────────────────────────────────────────
+_ocr_requests = Counter(
+    "ocr_requests_total",
+    "Total OCR requests",
+    ["endpoint", "client_ip", "status"],
+)
+_ocr_processing_time = Histogram(
+    "ocr_processing_seconds",
+    "OCR processing time in seconds",
+    ["endpoint"],
+    buckets=[0.5, 1.0, 2.0, 3.0, 5.0, 10.0, 20.0, 30.0],
+)
+_ocr_fields_detected = Histogram(
+    "ocr_fields_detected_per_request",
+    "Number of fields detected per request",
+    buckets=[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15],
+)
 
 SERVING_CONFIG       = "configs/serving.yaml"
 MAX_IMAGE_SIZE_BYTES = 10 * 1024 * 1024   # 10 MB
@@ -405,10 +424,13 @@ async def health():
     },
 )
 async def ocr_endpoint(
+    request: Request,
     background_tasks: BackgroundTasks,
     file: UploadFile = File(..., description="JPEG, PNG, or WebP image of the ID card"),
     include_raw: bool = False,
 ):
+    client_ip = request.client.host if request.client else "unknown"
+
     if _pipeline is None:
         raise HTTPException(status_code=503, detail="OCR pipeline not loaded")
 
@@ -425,8 +447,14 @@ async def ocr_endpoint(
     try:
         raw_result = _pipeline.process_bytes(data)
     except Exception as e:
+        _ocr_requests.labels(endpoint="single", client_ip=client_ip, status="error").inc()
         logger.exception("OCR processing error")
         raise HTTPException(status_code=422, detail=str(e))
+
+    meta = raw_result.get("metadata", {})
+    _ocr_requests.labels(endpoint="single", client_ip=client_ip, status="success").inc()
+    _ocr_processing_time.labels(endpoint="single").observe(meta.get("processing_time_s", 0))
+    _ocr_fields_detected.observe(meta.get("num_fields_detected", 0))
 
     background_tasks.add_task(_log_to_mlflow, raw_result, data, "multipart")
 
@@ -452,6 +480,7 @@ async def ocr_endpoint(
     },
 )
 async def ocr_base64_endpoint(
+    http_request: Request,
     request: Base64ImageRequest,
     background_tasks: BackgroundTasks,
 ):
@@ -467,6 +496,8 @@ async def ocr_base64_endpoint(
     ```
     Supports optional data URI prefix: ``data:image/jpeg;base64,...``
     """
+    client_ip = http_request.client.host if http_request.client else "unknown"
+
     if _pipeline is None:
         raise HTTPException(status_code=503, detail="OCR pipeline not loaded")
 
@@ -481,8 +512,14 @@ async def ocr_base64_endpoint(
     try:
         raw_result = _pipeline.process_bytes(image_bytes)
     except Exception as e:
+        _ocr_requests.labels(endpoint="base64", client_ip=client_ip, status="error").inc()
         logger.exception("OCR processing error")
         raise HTTPException(status_code=422, detail=str(e))
+
+    meta = raw_result.get("metadata", {})
+    _ocr_requests.labels(endpoint="base64", client_ip=client_ip, status="success").inc()
+    _ocr_processing_time.labels(endpoint="base64").observe(meta.get("processing_time_s", 0))
+    _ocr_fields_detected.observe(meta.get("num_fields_detected", 0))
 
     background_tasks.add_task(_log_to_mlflow, raw_result, image_bytes, "base64")
 
@@ -514,9 +551,12 @@ async def ocr_base64_endpoint(
     },
 )
 async def ocr_combined_endpoint(
+    http_request: Request,
     request: CombinedIDRequest,
     background_tasks: BackgroundTasks,
 ):
+    client_ip = http_request.client.host if http_request.client else "unknown"
+
     if _pipeline is None:
         raise HTTPException(status_code=503, detail="OCR pipeline not loaded")
 
@@ -534,10 +574,16 @@ async def ocr_combined_endpoint(
         front_raw = _pipeline.process_bytes(front_bytes)
         back_raw  = _pipeline.process_bytes(back_bytes)
     except Exception as e:
+        _ocr_requests.labels(endpoint="combined", client_ip=client_ip, status="error").inc()
         logger.exception("OCR processing error (combined)")
         raise HTTPException(status_code=422, detail=str(e))
 
     merged_raw = _merge_pipeline_fields(front_raw, back_raw)
+    meta = merged_raw.get("metadata", {})
+    _ocr_requests.labels(endpoint="combined", client_ip=client_ip, status="success").inc()
+    _ocr_processing_time.labels(endpoint="combined").observe(meta.get("processing_time_s", 0))
+    _ocr_fields_detected.observe(meta.get("num_fields_detected", 0))
+
     background_tasks.add_task(_log_to_mlflow, merged_raw, front_bytes, "combined")
 
     formatted = _format_etisalat_response(merged_raw)
