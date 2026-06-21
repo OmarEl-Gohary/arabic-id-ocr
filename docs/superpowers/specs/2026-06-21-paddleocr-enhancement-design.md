@@ -23,7 +23,7 @@ The project already has a working PaddleOCR fine-tuning pipeline:
 | `scripts/prepare_paddle_finetune.py` | Merges real + synthetic data into PaddleOCR training format (`train_label.txt`, `val_label.txt`, `arabic_dict.txt`) |
 | `configs/paddle_rec_finetune.yml` | PaddleOCR SVTR_LCNet training config, matches `arabic_PP-OCRv5_mobile_rec` architecture |
 
-Augmentation already implemented in both `generate_arabic_synthetic.py::augment()` and `prepare_paddle_finetune.py::augment_crop()`: Gaussian blur, motion blur, salt-and-pepper noise, perspective skew, rotation, brightness/contrast, Gaussian noise, JPEG compression artifacts — all independently randomized so they combine. **No changes needed to augmentation.**
+Augmentation already implemented in both `generate_arabic_synthetic.py::augment()` and `prepare_paddle_finetune.py::augment_crop()`: Gaussian blur, motion blur, salt-and-pepper noise, perspective skew, rotation, brightness/contrast, Gaussian noise, JPEG compression artifacts — all independently randomized so they combine. One gap identified: no shadow simulation (see 1.5 below).
 
 ## Part 1 — Data generation changes
 
@@ -31,7 +31,7 @@ Augmentation already implemented in both `generate_arabic_synthetic.py::augment(
 
 - Add `mishkal` (pure-Python, rule/lexicon-based Arabic diacritizer) as a dependency. Chosen over `camel-tools` to avoid adding transformer/torch version pins that risk conflicting with this project's already-pinned CPU torch setup.
 - Add `diacritize(text: str) -> str` helper in `generate_arabic_synthetic.py` that runs text through mishkal.
-- In `sample_text()`, apply `diacritize()` to the sampled string with ~35% probability, across **all** Arabic text categories (names, addresses, jobs, gender/religion/status vocab) — not limited to specific fields. This produces a realistic mix of plain and diacritized training samples.
+- In `sample_text()`, apply `diacritize()` to the sampled string with ~30% probability (without-tashkeel is the deliberate majority class at ~70%), across **all** Arabic text categories (names, addresses, jobs, gender/religion/status vocab) — not limited to specific fields. Real Egyptian ID cards are printed without diacritics in the vast majority of cases, so the training distribution should reflect that base rate while still giving the model enough diacritized exposure to recognize tashkeel when it does appear.
 - No change needed to character dictionary building in `prepare_paddle_finetune.py::build_char_dict()` — diacritic codepoints (U+064B–U+0652) already fall inside the `0x0600–0x06FF` Arabic block it scans for, so they are picked up automatically once they appear in any label text.
 
 ### 1.2 Serial number format fix
@@ -46,6 +46,15 @@ Augmentation already implemented in both `generate_arabic_synthetic.py::augment(
 ### 1.4 Generation scale
 
 - Bump default `--count` for `generate_arabic_synthetic.py` from 10,000 to 20,000, since the tashkeel variant roughly doubles effective vocabulary diversity (plain + diacritized versions of the same words).
+
+### 1.5 Shadow augmentation (new)
+
+The existing `augment()` (in `generate_arabic_synthetic.py`) and `augment_crop()` (in `prepare_paddle_finetune.py`) already cover blur, motion blur, salt-and-pepper, skew, rotation, brightness/contrast, Gaussian noise, and JPEG artifacts — but neither simulates **shadow**, which is a common real-world degradation when a phone or finger casts a partial shadow over part of an ID card during capture.
+
+Add a `add_shadow(img)` step to both augmentation functions:
+- Generate a soft-edged dark gradient blob (random position, size, and opacity) over the image, simulating a partial shadow from uneven lighting or an object near the camera.
+- Implementation: draw a radial or linear gradient mask (via PIL `ImageDraw` + `GaussianBlur` on the mask edges for softness), then alpha-composite a darkened layer using that mask.
+- Apply with ~30% probability, independently of the other augmentations, so it can combine with blur/skew/noise exactly like the existing techniques.
 
 ## Part 2 — Training, evaluation, deployment
 
@@ -76,7 +85,6 @@ Before promoting the new model:
 
 - Automatic diacritization of plain (undiacritized) OCR output — a separate NLP task, not OCR recognition training
 - camel-tools or other neural diacritization libraries — rejected due to dependency-conflict risk with this project's pinned CPU-only torch/numpy versions
-- Changes to the existing augmentation functions — already comprehensive and cover the requested techniques (salt-and-pepper, blur, skew, and combinations)
 
 ## Success criteria
 
