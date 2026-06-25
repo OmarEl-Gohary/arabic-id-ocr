@@ -34,6 +34,7 @@ TextRecognition(model_name='arabic_PP-OCRv5_mobile_rec')" || true
 
 COPY src/      ./src/
 COPY configs/  ./configs/
+COPY scripts/  ./scripts/
 COPY runs/train/arabic_id_detector/weights/best.pt \
      ./runs/train/arabic_id_detector/weights/best.pt
 

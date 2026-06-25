@@ -14,6 +14,7 @@ Usage:
 import argparse
 import sys
 from pathlib import Path
+from typing import Optional
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
@@ -62,6 +63,9 @@ OCR_TAGS = {
     "framework":     "paddleocr",
     "input_format":  "BGR numpy array",
 }
+
+# File extensions that are part of a PaddleOCR inference model directory
+_PADDLE_INFERENCE_EXTS = {".pdmodel", ".pdiparams", ".pdiparams.info", ".yml", ".yaml", ".json", ".txt"}
 
 
 def _get_or_create_registered_model(client: MlflowClient, name: str, description: str):
@@ -115,22 +119,65 @@ def register_yolo(client: MlflowClient, weights_path: Path, stage: str) -> str:
     return mv.version
 
 
-def register_ocr(client: MlflowClient, stage: str) -> str:
-    """Register PaddleOCR engine metadata as arabic-ocr-engine."""
+def register_ocr(
+    client: MlflowClient,
+    stage: str,
+    model_dir: Optional[Path] = None,
+    cer: Optional[float] = None,
+) -> str:
+    """Register PaddleOCR engine as arabic-ocr-engine.
+
+    If model_dir is given (exported inference directory from Colab fine-tuning),
+    the actual model files are logged as artifacts and CER can be recorded.
+    Otherwise only metadata is logged (pretrained model downloaded at runtime).
+    """
     print("\n--- Registering arabic-ocr-engine (PaddleOCR) ---")
 
-    with mlflow.start_run(run_name="ocr-registration") as run:
-        mlflow.set_tags(OCR_TAGS)
-        mlflow.log_params({
-            "model_name":   "arabic_PP-OCRv5_mobile_rec",
-            "use_gpu":      "false",
-            "max_text_len": "50",
-        })
-        mlflow.log_text(
-            "PaddleOCR arabic_PP-OCRv5_mobile_rec — downloaded at runtime by PaddleOCR.\n"
-            "Cached at: ~/.paddlex/official_models/arabic_PP-OCRv5_mobile_rec\n",
-            "model_info.txt",
-        )
+    is_finetuned = model_dir is not None
+    variant = "finetuned" if is_finetuned else "pretrained"
+
+    tags = {**OCR_TAGS, "model_variant": variant}
+
+    params = {
+        "model_name":    "arabic_PP-OCRv5_mobile_rec",
+        "use_gpu":       "false",
+        "max_text_len":  "40",
+        "model_variant": variant,
+    }
+    if is_finetuned:
+        params["model_dir"] = str(model_dir)
+
+    metrics: dict = {}
+    if cer is not None:
+        metrics["CER"] = cer
+        print(f"  CER          : {cer:.4f}")
+
+    run_name = f"ocr-registration-{variant}"
+
+    with mlflow.start_run(run_name=run_name) as run:
+        mlflow.set_tags(tags)
+        mlflow.log_params(params)
+        if metrics:
+            mlflow.log_metrics(metrics)
+
+        if is_finetuned:
+            # Log all inference model files (pdmodel, pdiparams, config, dict …)
+            files_logged = 0
+            for fpath in sorted(model_dir.rglob("*")):
+                if fpath.is_file() and fpath.suffix in _PADDLE_INFERENCE_EXTS:
+                    mlflow.log_artifact(str(fpath), artifact_path="paddleocr_model")
+                    files_logged += 1
+            if files_logged == 0:
+                print(f"  WARNING: no inference files found in {model_dir}")
+            else:
+                print(f"  Logged {files_logged} model file(s) from {model_dir}")
+        else:
+            mlflow.log_text(
+                "PaddleOCR arabic_PP-OCRv5_mobile_rec — downloaded at runtime.\n"
+                "Cached at: ~/.paddlex/official_models/arabic_PP-OCRv5_mobile_rec\n",
+                "model_info.txt",
+            )
+
         run_id = run.info.run_id
         artifact_uri = run.info.artifact_uri
         print(f"  Run ID       : {run_id}")
@@ -144,13 +191,18 @@ def register_ocr(client: MlflowClient, stage: str) -> str:
         ),
     )
 
-    source = f"{artifact_uri}"
+    source = f"{artifact_uri}/paddleocr_model" if is_finetuned else artifact_uri
+    desc = (
+        f"Fine-tuned PP-OCRv5 Arabic — CER={cer:.4f}" if (is_finetuned and cer is not None)
+        else "Fine-tuned PP-OCRv5 Arabic recognition" if is_finetuned
+        else "PP-OCRv5 mobile Arabic recognition. Pretrained — no fine-tuning."
+    )
     mv = client.create_model_version(
         name="arabic-ocr-engine",
         source=source,
         run_id=run_id,
-        description="PP-OCRv5 mobile Arabic recognition. No fine-tuning yet.",
-        tags={"ready": "true"},
+        description=desc,
+        tags={"ready": "true", "variant": variant},
     )
     print(f"  Version: {mv.version}")
 
@@ -164,7 +216,23 @@ def register_ocr(client: MlflowClient, stage: str) -> str:
 
 
 def parse_args():
-    p = argparse.ArgumentParser()
+    p = argparse.ArgumentParser(
+        description="Register YOLO + PaddleOCR models in MLflow Model Registry.",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  # Register pretrained models (metadata only for PaddleOCR):
+  python scripts/register_models.py
+
+  # Register fine-tuned PaddleOCR after Colab training:
+  python scripts/register_models.py \\
+      --paddleocr-model-dir models/arabic_id_rec_finetuned \\
+      --cer 0.085
+
+  # Register against a remote MLflow server:
+  python scripts/register_models.py --tracking-uri http://10.10.60.10:5000
+""",
+    )
     p.add_argument("--tracking-uri", default="sqlite:///mlruns.db",
                    help="MLflow tracking URI (must be SQLite or DB for registry)")
     p.add_argument("--weights",      default="runs/train/arabic_id_detector/weights/best.pt",
@@ -172,6 +240,18 @@ def parse_args():
     p.add_argument("--stage",        default="Staging",
                    choices=["None", "Staging", "Production"],
                    help="Stage to promote model versions to after registration")
+    p.add_argument("--paddleocr-model-dir", default=None,
+                   help=(
+                       "Path to exported PaddleOCR inference directory "
+                       "(e.g. models/arabic_id_rec_finetuned). "
+                       "If omitted, only metadata is logged (pretrained model)."
+                   ))
+    p.add_argument("--cer", type=float, default=None,
+                   help="Character Error Rate from fine-tuning evaluation (optional, 0–1)")
+    p.add_argument("--skip-yolo", action="store_true",
+                   help="Skip YOLO registration (useful when re-registering OCR only)")
+    p.add_argument("--skip-ocr",  action="store_true",
+                   help="Skip PaddleOCR registration (useful when re-registering YOLO only)")
     return p.parse_args()
 
 
@@ -179,24 +259,44 @@ def main():
     args = parse_args()
 
     weights_path = PROJECT_ROOT / args.weights
-    if not weights_path.exists():
+    paddleocr_dir: Optional[Path] = (
+        Path(args.paddleocr_model_dir).resolve() if args.paddleocr_model_dir else None
+    )
+
+    if not args.skip_yolo and not weights_path.exists():
         print(f"ERROR: YOLO weights not found at {weights_path}")
         sys.exit(1)
 
+    if paddleocr_dir and not paddleocr_dir.exists():
+        print(f"ERROR: PaddleOCR model dir not found at {paddleocr_dir}")
+        sys.exit(1)
+
     print(f"MLflow tracking URI : {args.tracking_uri}")
-    print(f"YOLO weights        : {weights_path}")
+    if not args.skip_yolo:
+        print(f"YOLO weights        : {weights_path}")
+    if paddleocr_dir:
+        print(f"PaddleOCR model dir : {paddleocr_dir}")
+        if args.cer is not None:
+            print(f"CER                 : {args.cer}")
     print(f"Target stage        : {args.stage}")
 
     mlflow.set_tracking_uri(args.tracking_uri)
     mlflow.set_experiment("model-registry")
     client = MlflowClient()
 
-    yolo_ver = register_yolo(client, weights_path, args.stage)
-    ocr_ver  = register_ocr(client, args.stage)
+    yolo_ver = ocr_ver = None
+
+    if not args.skip_yolo:
+        yolo_ver = register_yolo(client, weights_path, args.stage)
+
+    if not args.skip_ocr:
+        ocr_ver = register_ocr(client, args.stage, paddleocr_dir, args.cer)
 
     print("\n--- Summary ---")
-    print(f"  arabic-id-detector  v{yolo_ver}  -> {args.stage}")
-    print(f"  arabic-ocr-engine   v{ocr_ver}   -> {args.stage}")
+    if yolo_ver:
+        print(f"  arabic-id-detector  v{yolo_ver}  -> {args.stage}")
+    if ocr_ver:
+        print(f"  arabic-ocr-engine   v{ocr_ver}   -> {args.stage}")
     print("\nView in MLflow UI:")
     print("  mlflow ui --backend-store-uri sqlite:///mlruns.db --port 5001")
     print("  → http://localhost:5001  →  Models tab")
